@@ -108,7 +108,7 @@ jobs:
       run: |
         echo "Free space:"
         df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /srcdir/openwrt $GITHUB_WORKSPACE/openwrt
         # 版本号取 openwrt/include/version.mk 里 VERSION_NUMBER 的兜底字面量，供产物名与 Release 标签使用
         raw="$(grep -m1 -F 'VERSION_NUMBER:=$(if ' openwrt/include/version.mk)"
