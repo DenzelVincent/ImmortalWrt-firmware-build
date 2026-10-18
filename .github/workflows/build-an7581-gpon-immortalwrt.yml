@@ -117,7 +117,7 @@ jobs:
       run: |
         echo "Free space:"
         df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /srcdir/openwrt $GITHUB_WORKSPACE/openwrt
         # 版本号取 openwrt/include/version.mk 里 VERSION_NUMBER 的兜底字面量，供产物名与 Release 标签使用
         raw="$(grep -m1 -F 'VERSION_NUMBER:=$(if ' openwrt/include/version.mk)"
@@ -198,34 +198,6 @@ jobs:
     # ----------------------------------------------------------
     - name: Update feeds
       run: cd openwrt && ./scripts/feeds update -a
-
-    # ----------------------------------------------------------
-    # 步骤 7.5: 清理 miniupnpd 2.3.11 的遗留补丁
-    # immortalwrt/packages 于 2026-10-16 升级到 2.3.11 时保留了 2.3.9 的
-    # 020/030/040 旧补丁，020 对 2.3.11 有 5 个 hunk 打不上；2.3.11 已包含
-    # 这些修复，官方 openwrt/packages 同版本已无 patches 目录。
-    # 按 blob 精确匹配旧补丁再删，上游合并 PR #2001 后本步骤自动失效。
-    # ----------------------------------------------------------
-    - name: Fix stale miniupnpd patches
-      run: |
-        cd openwrt/feeds/packages
-        if ! grep -q '^PKG_VERSION:=2.3.11$' net/miniupnpd/Makefile; then
-          echo "miniupnpd is not 2.3.11, skip stale patch cleanup"
-          exit 0
-        fi
-        for entry in \
-          "020-descr-filter-fix.patch:9d657d15345f00e4de4b454e32006c27a9922b84" \
-          "030-allow-private-fix.patch:b8a42b2b567f2c3bb9483d58a229896000697325" \
-          "040-improve-logging.patch:998df1cb4e2f1d4facd768d227be600b3b47d49c"; do
-          file="${entry%%:*}"
-          blob="${entry##*:}"
-          path="net/miniupnpd/patches/$file"
-          [ -f "$path" ] || continue
-          if [ "$(git rev-parse "HEAD:$path")" = "$blob" ]; then
-            rm -f "$path"
-            echo "removed stale miniupnpd patch: $file"
-          fi
-        done
 
     # ----------------------------------------------------------
     # 步骤 8: 安装 feeds 到编译环境

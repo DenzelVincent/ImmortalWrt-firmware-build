@@ -242,7 +242,7 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 
 三个目标只是"克隆哪个源码分支 + 拷哪份配置"不同，其余步骤一致：
 
-| 目标 | `git clone -b <分支>` | `cp <配置> .config` |
+| 目标 | `git clone --depth 1 -b <分支>` | `cp <配置> .config` |
 | --- | --- | --- |
 | AN7581 XGS-PON | `master` | `an7581.config` |
 | AN7581 GPON | `AN7581-GPON` | `an7581-gpon.config` |
@@ -252,10 +252,10 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 # 安装编译所需的工具链和库
 sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
 
-# 拉取源码（分支按上表选，这里以 AN7581 XSGPON 为例）
-git clone -b master https://github.com/DenzelVicent/ponwrt.git
-# git clone -b AN7581-GPON https://github.com/DenzelVicent/ponwrt.git
-# git clone -b AN7583-GPON https://github.com/DenzelVicent/ponwrt.git
+# 拉取源码（分支按上表选，这里以 AN7581 XSGPON 为例；浅克隆只取当前快照，需要完整历史/版本号时去掉 --depth 1）
+git clone --depth 1 -b master https://github.com/DenzelVicent/ponwrt.git
+# git clone --depth 1 -b AN7581-GPON https://github.com/DenzelVicent/ponwrt.git
+# git clone --depth 1 -b AN7583-GPON https://github.com/DenzelVicent/ponwrt.git
 cd ponwrt
 
 # 更新并安装 feeds
