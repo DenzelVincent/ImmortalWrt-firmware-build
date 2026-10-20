@@ -22,7 +22,7 @@ clone_pkg() {  # $1=仓库地址 $2=目标目录 $3=失败时的日志级别 war
 clone_pkg https://github.com/gdy666/luci-app-lucky.git package/luci-app-lucky warning
 
 # Airoha NPU 管理界面 (AN758x 平台专用)
-clone_pkg https://github.com/DenzelVicent/luci-app-airoha-npu.git package/luci-app-airoha-npu error
+clone_pkg https://github.com/DenzelVincent/luci-app-airoha-npu.git package/luci-app-airoha-npu error
 
 echo "=== 第三方包目录检查 ==="
 for d in package/luci-app-lucky package/luci-app-airoha-npu; do

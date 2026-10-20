@@ -1,6 +1,6 @@
 # ImmortalWrt 固件云编译 (Airoha AN758x)
 
-> 源码：[ImmortalWrt](https://github.com/DenzelVicent/ponwrt) | 基于 [ImmortalWrt](https://github.com/immortalwrt/immortalwrt)
+> 源码：[ImmortalWrt](https://github.com/DenzelVincent/ponwrt) | 基于 [ImmortalWrt](https://github.com/immortalwrt/immortalwrt)
 
 本仓库用 GitHub Actions 云编译 Airoha AN758x 平台的光猫固件。三个编译目标（AN7581 XGS-PON、AN7581 GPON、AN7583 GPON）都在本分支上，各自一份工作流和一份设备配置文件，互不干扰；要编哪台就在 Actions 页面选对应的工作流。
 
@@ -189,7 +189,7 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 | 源码分支 | `pon_drivers` / `pon_userspace` 指向 |
 | --- | --- |
 | `master` | 上游 `pbs05/openwrt-pon-drivers`、`pbs05/openwrt-pon-userspace` |
-| `AN7581-GPON` / `AN7583-GPON` | `DenzelVicent` 的 fork（含 GPON 兼容性改造） |
+| `AN7581-GPON` / `AN7583-GPON` | `DenzelVincent` 的 fork（含 GPON 兼容性改造） |
 
 改 feed 源只改源码仓库那一处，源码与编译配置各管各的。若确需临时换源，在本仓库根目录新建 `feeds.conf.default`，工作流会 `mv` 到源码目录并计入 `dl/` 缓存 key。
 
@@ -253,9 +253,9 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
 
 # 拉取源码（分支按上表选，这里以 AN7581 XSGPON 为例；浅克隆只取当前快照，需要完整历史/版本号时去掉 --depth 1）
-git clone --depth 1 -b master https://github.com/DenzelVicent/ponwrt.git
-# git clone --depth 1 -b AN7581-GPON https://github.com/DenzelVicent/ponwrt.git
-# git clone --depth 1 -b AN7583-GPON https://github.com/DenzelVicent/ponwrt.git
+git clone --depth 1 -b master https://github.com/DenzelVincent/ponwrt.git
+# git clone --depth 1 -b AN7581-GPON https://github.com/DenzelVincent/ponwrt.git
+# git clone --depth 1 -b AN7583-GPON https://github.com/DenzelVincent/ponwrt.git
 cd ponwrt
 
 # 更新并安装 feeds
@@ -264,7 +264,7 @@ cd ponwrt
 
 # 克隆第三方包 (不在 feed 中，必须在 make defconfig 前完成，否则 kconfig 静默丢弃)
 git clone --depth 1 https://github.com/gdy666/luci-app-lucky.git package/luci-app-lucky
-git clone --depth 1 https://github.com/DenzelVicent/luci-app-airoha-npu.git package/luci-app-airoha-npu
+git clone --depth 1 https://github.com/DenzelVincent/luci-app-airoha-npu.git package/luci-app-airoha-npu
 
 # 选择配置（按上表选对应那份）
 cp an758.config .config
