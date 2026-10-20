@@ -3,7 +3,7 @@
 > MT7981 源码：[Hanwckf's ImmortalWrt](https://github.com/hanwckf/immortalwrt-mt798x)（AX3000T）、
 > [ImmortalWrt 官方仓库](https://github.com/immortalwrt/immortalwrt)（RAX3000M，`v24.10.6`）、
 > [U-Boot](https://github.com/hanwckf/bl-mt798x)  
-> AN7581 源码：[ImmortalWrt](https://github.com/DenzelVicent/ponwrt)
+> AN7581 源码：[ImmortalWrt](https://github.com/DenzelVincent/ponwrt)
 
 本项目利用 GitHub Actions 编译 ImmortalWrt 固件，支持 MT7981 和 AN758x 两大平台。
 

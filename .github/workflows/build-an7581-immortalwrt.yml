@@ -1,7 +1,7 @@
 # ============================================================
 # ImmortalWrt 固件编译工作流 (AN7581 XGS-PON)
 # 目标设备: Nokia XG-040G-MD (Airoha AN7581)
-# 源码来源: https://github.com/DenzelVicent/ponwrt.git (master 分支)
+# 源码来源: https://github.com/DenzelVincent/ponwrt.git (master 分支)
 # 触发方式: 手动触发 (workflow_dispatch)
 # ============================================================
 
@@ -33,7 +33,7 @@ on:
 
 env:
   # 源码仓库地址
-  REPO_URL: https://github.com/DenzelVicent/ponwrt.git
+  REPO_URL: https://github.com/DenzelVincent/ponwrt.git
   # 源码分支：AN7581 使用 master 分支（纯净基线，不含 GPON PCS 改动）
   REPO_BRANCH: master
   # 设备配置文件（make menuconfig 生成），工作流把它复制成 openwrt/.config
