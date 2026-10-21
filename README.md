@@ -86,9 +86,9 @@ ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
 > 每个 `luci-app-*` 都配套 `luci-i18n-<app>-zh-cn`（含 `luci-i18n-base-zh-cn`），简体中文界面内置；
 > 主题带 `luci-theme-argon`，`luci-theme-bootstrap` 一并保留。
 >
-> `luci-app-lucky` 与 `luci-app-airoha-npu` 不在任何 feed 内，由工作流在 `make defconfig` 之前
-> `git clone` 到 `package/`。顺序反了 kconfig 不报错，只会静默不打包这两个界面；
-> 本地编译同样要先克隆再 `make defconfig`（见下面"本地编译"一节）。
+> `luci-app-lucky` 来自 PonWrt 的 `lucky` feed（`feeds.conf.default` 中固定提交），随 feeds 安装自动就位；
+> `luci-app-airoha-npu` 不是 feed 格式，由工作流在 `make defconfig` 之前 `git clone` 到 `package/`。
+> 顺序反了 kconfig 不报错，只会静默不打包该界面；本地编译同样要先克隆再 `make defconfig`（见下面"本地编译"一节）。
 
 ### PON 平台组件
 
@@ -168,8 +168,9 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 静默跳过整包 —— 固件里没有对应界面但编译不报错（2026-10-10 踩过，见提交 `77684b6`）。
 本地编译要在 `./scripts/feeds install -a` 之后手动跑一遍同样的 clone。当前预置：
 
-- `luci-app-lucky`（clone 失败只告警，不中断编译）
 - `luci-app-airoha-npu`（AN758x 平台专用，失败打 `::error::`）
+
+`luci-app-lucky` 已在 PonWrt 的 `feeds.conf.default` 中作为 `lucky` feed 固定提交，不再由本脚本处理。
 
 ### `set-firmware-defaults.sh`
 
@@ -262,8 +263,7 @@ cd ponwrt
 ./scripts/feeds update -a
 ./scripts/feeds install -a
 
-# 克隆第三方包 (不在 feed 中，必须在 make defconfig 前完成，否则 kconfig 静默丢弃)
-git clone --depth 1 https://github.com/gdy666/luci-app-lucky.git package/luci-app-lucky
+# 克隆第三方包 (lucky 已由 feeds 提供；airoha-npu 不在 feed 中，必须在 make defconfig 前完成，否则 kconfig 静默丢弃)
 git clone --depth 1 https://github.com/DenzelVincent/luci-app-airoha-npu.git package/luci-app-airoha-npu
 
 # 选择配置（按上表选对应那份）

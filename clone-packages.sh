@@ -9,6 +9,7 @@
 # 约定: clone 目录名 = 包名; 单个包 clone 失败只打 workflow 标记、不中断整趟编译
 #       (丢插件不丢固件); 末尾自检目录, 日志出现 [MISSING] 即该包不会进固件。
 # 本地编译同样要在 feeds install 之后跑一遍本脚本, 否则配置里选的包会被静默丢弃。
+# 注: lucky 仓库根下是多个包目录, 已作为 feed 写进 PonWrt 的 feeds.conf.default, 本脚本不再处理。
 
 clone_pkg() {  # $1=仓库地址 $2=目标目录 $3=失败时的日志级别 warning|error
   if git clone --depth 1 "$1" "$2"; then
@@ -18,13 +19,10 @@ clone_pkg() {  # $1=仓库地址 $2=目标目录 $3=失败时的日志级别 war
   fi
 }
 
-# Lucky (IPv6 端口转发/DDNS/公网访问)
-clone_pkg https://github.com/gdy666/luci-app-lucky.git package/luci-app-lucky warning
-
-# Airoha NPU 管理界面 (AN758x 平台专用)
+# Airoha NPU 管理界面 (AN758x 平台专用；仓库根目录直接放 Makefile)
 clone_pkg https://github.com/DenzelVincent/luci-app-airoha-npu.git package/luci-app-airoha-npu error
 
 echo "=== 第三方包目录检查 ==="
-for d in package/luci-app-lucky package/luci-app-airoha-npu; do
+for d in package/luci-app-airoha-npu; do
   [ -d "$d" ] && echo "[OK] $d" || echo "[MISSING] $d"
 done
