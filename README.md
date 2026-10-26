@@ -2,7 +2,7 @@
 
 > 源码：[ImmortalWrt](https://github.com/DenzelVincent/ponwrt) | 基于 [ImmortalWrt](https://github.com/immortalwrt/immortalwrt)
 
-本仓库用 GitHub Actions 云编译 Airoha AN758x 平台的光猫固件。三个编译目标（AN7581 XGS-PON、AN7581 GPON、AN7583 GPON）都在本分支上，各自一份工作流和一份设备配置文件，互不干扰；要编哪台就在 Actions 页面选对应的工作流。
+本仓库用 GitHub Actions 云编译 Airoha AN758x 平台的光猫固件。两个编译目标（AN7581 XGS-PON、AN7581 GPON）都在本分支上，各自一份工作流和一份设备配置文件，互不干扰；要编哪台就在 Actions 页面选对应的工作流。
 
 ## 免责声明
 
@@ -16,19 +16,18 @@ ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
 
 ## 编译目标一览
 
-三份配置和脚本共用，只有下面这几处按目标区分。要新增一个编译目标，复制一份工作流改这几个值即可。
+两份配置和脚本共用，只有下面这几处按目标区分。要新增一个编译目标，复制一份工作流改这几个值即可。
 
 | 工作流 | 目标设备 | 源码分支 (`REPO_BRANCH`) | 设备配置 (`CONFIG_FILE`) | 缓存前缀 (`CONFIG_NAME`) | Profile (`SUBTARGET`) |
 | --- | --- | --- | --- | --- | --- |
 | `build-an7581-immortalwrt.yml` | Nokia XG-040G-MD (AN7581, XGS-PON) | `master` | `an7581.config` | `an7581` | `an7581` |
 | `build-an7581-gpon-immortalwrt.yml` | Nokia XG-040G-MD (AN7581, GPON) | `AN7581-GPON` | `an7581-gpon.config` | `an7581-gpon` | `an7581` |
-| `build-an7583-gpon-immortalwrt.yml` | Nokia XG-040G-MF (AN7583, GPON) | `AN7583-GPON` | `an7583-gpon.config` | `an7583-gpon` | `an7583` |
 
-> `REPO_BRANCH` 指向 PonWrt 源码仓库的分支：GPON 两个目标用的是含 GPON 内核 patch 的分支，
+> `REPO_BRANCH` 指向 PonWrt 源码仓库的分支：GPON 目标用的是含 GPON 内核 patch 的 `AN7581-GPON` 分支，
 > XGS-PON 用的是纯净基线 `master`。源码分支写死在各自工作流的 `env` 段，不由本仓库分支名推导。
 >
-> `CONFIG_NAME` 是缓存 key 的前缀，三个值（外加 MT7981 那条分支的 `mt7981`）互不为前缀，
-> 所以同一分支上的三份工作流不会恢复到彼此的缓存。
+> `CONFIG_NAME` 是缓存 key 的前缀，两个值（外加 MT7981 那条分支的 `mt7981`）互不为前缀，
+> 所以同一分支上的两份工作流不会恢复到彼此的缓存。
 
 ## 支持设备
 
@@ -45,7 +44,8 @@ ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
 | AN7581 | ZNXT ZN515XG-D | `znxt_zn515xg-d` | `reservearea` |
 | AN7583 | Nokia XG-040G-MF | `nokia_xg-040g-mf`、`nokia_xg-040g-mf-ubi` | `bosa`、`ri` |
 
-三份云编译配置各自只选中一台设备（`nokia_xg-040g-md-ubi` 或 `nokia_xg-040g-mf-ubi`），上表是平台支持的完整设备清单。
+两份云编译配置都只选中 `nokia_xg-040g-md-ubi` 这一台设备。上表是平台支持的完整设备清单：
+AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编译目标（`configs/an7583.config` 仅作参考）。
 
 ## 默认配置
 
@@ -82,7 +82,7 @@ ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
 | `luci-app-ttyd` | Web 终端 |
 | `luci-app-upnp` | UPnP 管理 |
 
-> 上表按三份设备配置文件里实测的 `CONFIG_PACKAGE_luci-app-*=y` 列出，三个编译目标清单一致。
+> 上表按两份设备配置文件里实测的 `CONFIG_PACKAGE_luci-app-*=y` 列出，两个编译目标清单一致。
 > 每个 `luci-app-*` 都配套 `luci-i18n-<app>-zh-cn`（含 `luci-i18n-base-zh-cn`），简体中文界面内置；
 > 主题带 `luci-theme-argon`，`luci-theme-bootstrap` 一并保留。
 >
@@ -97,7 +97,7 @@ ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
 | `airoha-ponctl` | PON 控制工具 |
 | `airoha-pond` | PON 守护进程 |
 | `airoha-pon-debug` | PON 调试工具 |
-| `airoha-en7581-npu-firmware` | EN7581 NPU 固件（AN7583 配置里为 `airoha-an7583-npu-firmware`） |
+| `airoha-en7581-npu-firmware` | EN7581 NPU 固件 |
 
 ### 内核模块
 
@@ -124,14 +124,12 @@ ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
 ```
 ├── .github/workflows/
 │   ├── build-an7581-immortalwrt.yml       # AN7581 XGS-PON 固件编译
-│   ├── build-an7581-gpon-immortalwrt.yml  # AN7581 GPON 固件编译
-│   └── build-an7583-gpon-immortalwrt.yml  # AN7583 GPON 固件编译
+│   └── build-an7581-gpon-immortalwrt.yml  # AN7581 GPON 固件编译
 ├── an7581.config                  # 云编译配置（XGS-PON 工作流的 CONFIG_FILE）
 ├── an7581-gpon.config             # 云编译配置（AN7581 GPON 工作流的 CONFIG_FILE）
-├── an7583-gpon.config             # 云编译配置（AN7583 GPON 工作流的 CONFIG_FILE）
 ├── configs/                       # 从源码仓库拷来的参考配置，工作流不读取
 │   ├── an7581.config              # AN7581 全设备配置（menuconfig 完整展开结果）
-│   ├── an7583.config              # AN7583 全设备配置（menuconfig 完整展开结果）
+│   ├── an7583.config              # AN7583 全设备配置（menuconfig 完整展开结果，本分支无对应编译目标）
 │   └── release.config             # 发布配置增量
 ├── add-feed-sources.sh            # 插入点 1：feeds update 之前，增删第三方 feed 源
 ├── clone-packages.sh              # 插入点 2：feeds install 之后，clone 非 feed 格式的第三方包
@@ -142,8 +140,8 @@ ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
 > 工作流把自己那份复制成 `openwrt/.config`，再无条件追加 `CONFIG_CCACHE=y`，然后 `make defconfig` 展开。
 > `configs/` 下的同名文件只是参考，不参与编译。
 >
-> 配置文件保留三份、不并成一份，是因为缓存 key 的哈希参数（`hashFiles`）按 GitHub 规定只能是
-> 字面量；各工作流只哈希自己那份，改 AN7583 的配置不会让 AN7581 的缓存失效。
+> 配置文件保留两份、不并成一份，是因为缓存 key 的哈希参数（`hashFiles`）按 GitHub 规定只能是
+> 字面量；各工作流只哈希自己那份，改 AN7581 GPON 的配置不会让 XGS-PON 的缓存失效。
 >
 > 本仓库根目录**不放** `feeds.conf.default`（工作流留着 `[ -e ]` 覆盖入口，按需自建）。
 
@@ -151,7 +149,7 @@ ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
 
 三个脚本对应编译流程里的三个插入点，工作流按 `env` 段的 `SCRIPT_ADD_FEED_SOURCES` /
 `SCRIPT_CLONE_PACKAGES` / `SCRIPT_SET_FIRMWARE_DEFAULTS` 三个变量调用。文件名写"做什么"，
-执行阶段写在各脚本的头注释里；三份编译目标共用同一批脚本，改动对三份产出同时生效。
+执行阶段写在各脚本的头注释里；两份编译目标共用同一批脚本，改动对两份产出同时生效。
 
 ### `add-feed-sources.sh`
 
@@ -177,20 +175,20 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 `make defconfig` **后**、编译**前**执行，用 `sed` 改源码树里会被装进 rootfs 的文件，
 即改固件的出厂默认值。恢复出厂和 `sysupgrade -n` 之后仍是这里的值。当前内容均为注释示例：
 
-- `sed` 改默认 LAN IP 那一行现在是注释状态，三个目标都用原生 `192.168.1.1`。
-  取消注释会让**三份产出的固件一起**改掉默认地址，只想改某一台时不要动这里，
+- `sed` 改默认 LAN IP 那一行现在是注释状态，两个目标都用原生 `192.168.1.1`。
+  取消注释会让**两份产出的固件一起**改掉默认地址，只想改某一台时不要动这里，
   改各自工作流的 `env` 段另加变量。
 - 可添加其他 `sed` 命令修改 DHCP、主机名等默认配置（DHCP 地址池出厂值是
   `start=100` / `limit=150`，即 `.100`–`.249`，一般不必显式改）
 
 ### feeds 源
 
-本仓库不带 `feeds.conf.default`，基础 feeds 用各源码分支自带的那份。三个分支都含 `pon_drivers`（Airoha PON 硬件驱动）与 `pon_userspace`（LuCI/ponctl/pond 等用户空间工具）两个 feed，区别只在指向哪个 fork：
+本仓库不带 `feeds.conf.default`，基础 feeds 用各源码分支自带的那份。两个源码分支都含 `pon_drivers`（Airoha PON 硬件驱动）与 `pon_userspace`（LuCI/ponctl/pond 等用户空间工具）两个 feed，区别只在指向哪个 fork：
 
 | 源码分支 | `pon_drivers` / `pon_userspace` 指向 |
 | --- | --- |
 | `master` | 上游 `pbs05/openwrt-pon-drivers`、`pbs05/openwrt-pon-userspace` |
-| `AN7581-GPON` / `AN7583-GPON` | `DenzelVincent` 的 fork（含 GPON 兼容性改造） |
+| `AN7581-GPON` | `DenzelVincent` 的 fork（含 GPON 兼容性改造） |
 
 默认 feed 的源只改源码仓库那一处；第三方/编译期增量 feed（当前是 `lucky`）只在 `add-feed-sources.sh` 追加，不写进源码仓库，两边不要互相掺。若确需整体换源，在本仓库根目录新建 `feeds.conf.default`，工作流会 `mv` 到源码目录并计入 `dl/` 缓存 key。
 
@@ -216,7 +214,7 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 
 ### 触发方式
 
-在 GitHub Actions 页面左侧**先选工作流**（三份对应三台设备），再点 "Run workflow"，按需勾选两个缓存清理开关：
+在 GitHub Actions 页面左侧**先选工作流**（两份对应两个编译目标），再点 "Run workflow"，按需勾选两个缓存清理开关：
 
 - `clean_dl_cache` — 先清空 `dl/` 下载缓存再编译。改了某个 package 的源码版本或下载地址
   （Makefile 里的 `PKG_VERSION` / `PKG_SOURCE_VERSION` / `PKG_SOURCE_URL`）而缓存里仍是同名旧包时
@@ -234,20 +232,19 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 
 ### 自定义配置
 
-- 改某台设备的软件包和内核模块，改它自己那份配置（`an7581.config` / `an7581-gpon.config` / `an7583-gpon.config`）；`configs/` 下的参考配置改了不影响云编译，工作流不读它
-- 改默认 IP、DHCP 等参数改 `set-firmware-defaults.sh`，注意它对三份产出生效
+- 改某台设备的软件包和内核模块，改它自己那份配置（`an7581.config` / `an7581-gpon.config`）；`configs/` 下的参考配置改了不影响云编译，工作流不读它
+- 改默认 IP、DHCP 等参数改 `set-firmware-defaults.sh`，注意它对两份产出生效
 - 换源码分支只改对应工作流 `env` 段的 `REPO_BRANCH`，本仓库的分支名不参与推导
 - 新增编译目标：复制一份工作流，改 `name:`、`REPO_BRANCH`、`CONFIG_FILE`、`CONFIG_NAME`、`DEVICE_NAME`、`SUBTARGET`，以及两处 cache key 里 `hashFiles` 的配置文件名（`CONFIG_NAME` 必须与现有各前缀互不为前缀）
 
 ## 本地编译
 
-三个目标只是"克隆哪个源码分支 + 拷哪份配置"不同，其余步骤一致：
+两个目标只是"克隆哪个源码分支 + 拷哪份配置"不同，其余步骤一致：
 
 | 目标 | `git clone --depth 1 -b <分支>` | `cp <配置> .config` |
 | --- | --- | --- |
 | AN7581 XGS-PON | `master` | `an7581.config` |
 | AN7581 GPON | `AN7581-GPON` | `an7581-gpon.config` |
-| AN7583 GPON | `AN7583-GPON` | `an7583-gpon.config` |
 
 ```sh
 # 安装编译所需的工具链和库
@@ -256,7 +253,6 @@ sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_en
 # 拉取源码（分支按上表选，这里以 AN7581 XSGPON 为例；浅克隆只取当前快照，需要完整历史/版本号时去掉 --depth 1）
 git clone --depth 1 -b master https://github.com/DenzelVincent/ponwrt.git
 # git clone --depth 1 -b AN7581-GPON https://github.com/DenzelVincent/ponwrt.git
-# git clone --depth 1 -b AN7583-GPON https://github.com/DenzelVincent/ponwrt.git
 cd ponwrt
 
 # 追加第三方 feed (lucky 由编译仓库的 add-feed-sources.sh 统一追加，必须在 feeds update 之前执行)
@@ -270,16 +266,15 @@ sh /path/to/ImmortalWrt-firmware-build/add-feed-sources.sh
 git clone --depth 1 https://github.com/DenzelVincent/luci-app-airoha-npu.git package/luci-app-airoha-npu
 
 # 选择配置（按上表选对应那份）
-cp an758.config .config
+cp an7581.config .config
 # cp an7581-gpon.config .config
-# cp an7583-gpon.config .config
 
 # 开始编译
 make defconfig
 make -j$(nproc)
 ```
 
-固件位于 `bin/targets/airoha/an7581/`（AN7581 两个目标）或 `bin/targets/airoha/an7583/`（AN7583 目标）。
+固件位于 `bin/targets/airoha/an7581/`。
 
 ## 刷入
 
