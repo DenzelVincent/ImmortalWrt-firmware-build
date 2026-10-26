@@ -12,12 +12,13 @@
 | 分支 | 说明 | 配置文件 |
 |---|---|---|
 | `master` | 总览分支，存放所有工作流模板（不存放设备配置） | — |
-| `AN7581` | AN758x 平台三个编译目标（XGS-PON 与 GPON）合并在同一分支 | `an7581.config`、`an7581-gpon.config`、`an7583-gpon.config` |
+| `AN7581` | AN758x 平台两个编译目标（AN7581 XGS-PON / AN7581 GPON）合并在同一分支 | `an7581.config`、`an7581-gpon.config` |
 | `MT7981` | MT7981 平台两台设备的固件 + U-Boot | `ax3000t.config`、`rax3000m.config` |
 
-> 2026-10-15 起原 `AN7581-GPON` / `AN7583-GPON` 两个分支并入 `AN7581`：三份设备配置和三份工作流
-> 全部保留、不合并（各工作流只读自己那份配置，cache key 的 `hashFiles` 参数是字面量，并一会让
-> 改一台设备连带失效另两台的缓存），只有 README 合成一份。要编哪台设备，在 Actions 页面选对应工作流。
+> 2026-10-15 起原 `AN7581-GPON` / `AN7583-GPON` 两个分支并入 `AN7581`；AN7583 编译目标已于 2026-10-18
+> 随配置和工作流一并移除，现保留两份设备配置和两份工作流，不合并（各工作流只读自己那份配置，
+> cache key 的 `hashFiles` 参数是字面量，并一会让改一台设备连带失效另一台的缓存），只有 README 合成一份。
+> 要编哪台设备，在 Actions 页面选对应工作流。
 
 ## 编译工作流
 
@@ -28,7 +29,6 @@
 | `build-mt7981-u-boot.yml` | MT7981 / master | 并行编译 MT7981 平台所有板型变体的 U-Boot 引导加载器 | 手动触发 (`workflow_dispatch`) |
 | `build-an7581-immortalwrt.yml` | AN7581 / master | 编译 AN7581 平台光猫固件 (XGS-PON)，源码分支 `REPO_BRANCH=master` | 手动触发 (`workflow_dispatch`) |
 | `build-an7581-gpon-immortalwrt.yml` | AN7581 / master | 编译 AN7581 平台光猫固件 (GPON)，源码分支 `REPO_BRANCH=AN7581-GPON` | 手动触发 (`workflow_dispatch`) |
-| `build-an7583-gpon-immortalwrt.yml` | AN7581 / master | 编译 AN7583 平台光猫固件 (GPON)，源码分支 `REPO_BRANCH=AN7583-GPON` | 手动触发 (`workflow_dispatch`) |
 
 > `REPO_URL` / `REPO_BRANCH` 写死在各工作流的 `env` 段（AN758x 指向 PonWrt 源码仓库的分支，
 > RAX3000M 指向个人 fork `DenzelVincent/immortalwrt` 的 `24.10.6` 分支），不由本仓库分支名推导；
@@ -42,7 +42,7 @@
 
 ## AN758x 平台默认配置
 
-- **默认 LAN IP**: `192.168.1.1`（三个编译目标一致；`AN7581` 分支 `set-firmware-defaults.sh` 里改 IP 的 `sed` 行处于注释状态）
+- **默认 LAN IP**: `192.168.1.1`（两个编译目标一致；`AN7581` 分支 `set-firmware-defaults.sh` 里改 IP 的 `sed` 行处于注释状态）
 - **包管理器**: APK (openssl)，文件系统 SquashFS + UBIFS
 - **编译内核**: Linux 6.18
 
@@ -66,12 +66,12 @@
 
 ## AN758x 平台预装插件
 
-三个编译目标（AN7581 XGS-PON / AN7581 GPON / AN7583 GPON）的插件清单一致，仅 NPU 固件包按 SoC 区分。
+两个编译目标（AN7581 XGS-PON / AN7581 GPON）的插件清单一致，NPU 固件包同为 `airoha-en7581-npu-firmware`。
 
 | 插件 | 说明 |
 |---|---|
 | `luci-app-adguardhome` | AdGuard Home DNS 过滤（同时预装 `adguardhome` 核心） |
-| `luci-app-airoha-npu` | Airoha NPU 硬件加速管理（AN7581 配 `airoha-en7581-npu-firmware`，AN7583 配 `airoha-an7583-npu-firmware`） |
+| `luci-app-airoha-npu` | Airoha NPU 硬件加速管理（同时预装 `airoha-en7581-npu-firmware`） |
 | `luci-app-autoreboot` | 定时自动重启 |
 | `luci-app-firewall` | 防火墙管理 |
 | `luci-app-hd-idle` | USB 硬盘自动休眠 |
@@ -126,6 +126,9 @@
 | AN7581 | ZNXT ZN515XG-D | `znxt_zn515xg-d` | `reservearea` |
 | AN7583 | Nokia XG-040G-MF | `nokia_xg-040g-mf`、`nokia_xg-040g-mf-ubi` | `bosa`、`ri` |
 
+> 上表是 PonWrt 平台支持的完整设备清单；`AN7581` 分支当前只提供 AN7581 的两个编译目标
+> （Nokia XG-040G-MD），不含 AN7583 编译目标，`configs/an7583.config` 仅作参考。
+
 ## 自定义编译
 
 如需自定义固件配置，请克隆本仓库并根据需求进行修改。
@@ -134,10 +137,10 @@
 
 | 文件 | 用途 |
 |---|---|
-| `an7581.config` / `an7581-gpon.config` / `an7583-gpon.config`（均在 `AN7581` 分支根目录）、`ax3000t.config` / `rax3000m.config`（在 `MT7981` 分支根目录） | 按设备型号命名的 OpenWrt menuconfig 配置，master 不存放配置文件 — 定义目标设备、内核选项、软件包；`ax3000t.config` 面向 hanwckf 21.02 的 `mediatek/mt7981`，`rax3000m.config` 面向个人 fork `24.10.6` 的 `mediatek/filogic`，两份配置的 target 符号与软件包段互不通用；工作流复制成 `openwrt/.config` 并无条件追加 `CONFIG_CCACHE=y`（`dl/` 与 `.ccache` 两层缓存默认启用；五份固件编译工作流各带 `clean_dl_cache` / `clean_ccache` 两个清理开关，默认不勾）；缓存 key 的前缀取自工作流 env 的 `CONFIG_NAME`，`an7581-` / `an7581-gpon-` / `an7583-gpon-` / `ax3000t-` / `rax3000m-` 五组前缀互不为前缀，同一分支上的多份工作流才不会恢复到彼此的缓存；改设备名要同步 `CONFIG_FILE`、`CONFIG_NAME` 和 key 里 `hashFiles` 的字面文件名（该参数不接受变量）；勾选清理开关时对应的 `Clear ... cache` 步骤排在同层 `Cache ...` 之前，删掉本设备前缀的条目后本趟全量下载/重编、收尾重存（一趟即恢复热度），并有删净断言，没删净直接失败；`rax3000m.config` 另显式关闭 7 个 `trusted-firmware-a-mt79xx-ram-*`（上游 `include/trusted-firmware-a.mk` 给了 `DEFAULT:=TARGET_mediatek_filogic`，勾 filogic 就默认全选，各自只往 BIN_DIR 丢一个 UART 救砖 `mt79xx-ram-*-bl2.bin`，关掉省 7 次 TFA 交叉编译；`*-spim-nand-ddr4` 等隐藏变体不能关，镜像构建要用它们的 staging 产物） |
+| `an7581.config` / `an7581-gpon.config`（均在 `AN7581` 分支根目录）、`ax3000t.config` / `rax3000m.config`（在 `MT7981` 分支根目录） | 按设备型号命名的 OpenWrt menuconfig 配置，master 不存放配置文件 — 定义目标设备、内核选项、软件包；`ax3000t.config` 面向 hanwckf 21.02 的 `mediatek/mt7981`，`rax3000m.config` 面向个人 fork `24.10.6` 的 `mediatek/filogic`，两份配置的 target 符号与软件包段互不通用；工作流复制成 `openwrt/.config` 并无条件追加 `CONFIG_CCACHE=y`（`dl/` 与 `.ccache` 两层缓存默认启用；四份固件编译工作流各带 `clean_dl_cache` / `clean_ccache` 两个清理开关，默认不勾）；缓存 key 的前缀取自工作流 env 的 `CONFIG_NAME`，四个值（`an7581` / `an7581-gpon` / `ax3000t` / `rax3000m`）两两不同，key 与恢复键都带 `-dl-` / `-ccache-` 段，同一分支上的多份工作流才不会恢复到彼此的缓存；改设备名要同步 `CONFIG_FILE`、`CONFIG_NAME` 和 key 里 `hashFiles` 的字面文件名（该参数不接受变量）；勾选清理开关时对应的 `Clear ... cache` 步骤排在同层 `Cache ...` 之前，删掉本设备前缀的条目后本趟全量下载/重编、收尾重存（一趟即恢复热度），并有删净断言，没删净直接失败；`rax3000m.config` 另显式关闭 7 个 `trusted-firmware-a-mt79xx-ram-*`（上游 `include/trusted-firmware-a.mk` 给了 `DEFAULT:=TARGET_mediatek_filogic`，勾 filogic 就默认全选，各自只往 BIN_DIR 丢一个 UART 救砖 `mt79xx-ram-*-bl2.bin`，关掉省 7 次 TFA 交叉编译；`*-spim-nand-ddr4` 等隐藏变体不能关，镜像构建要用它们的 staging 产物） |
 | `add-feed-sources.sh` | feeds 更新**前**执行的钩子脚本 — 增删第三方软件源（改 `feeds.conf.default`）。feed 名只能用字母、数字、下划线，带连字符会让 `feeds update` 报语法错误。当前追加 `lucky` feed（`gdy666/luci-app-lucky`，固定提交；`grep` 判重）；源码仓库只保留默认 feed，第三方 feed 一律在本脚本追加 |
 | `clone-packages.sh` | feeds 安装**后**、`make defconfig` **前**执行的钩子脚本 — clone 非 feed 格式的第三方包到 `package/<包名>/`。位置是硬约束：提前 clone 时 `+luci-base` 这类 feed 依赖解析不了，`make defconfig` 会静默跳过整包（编译不报错，见提交 `77684b6`）。AN7581 分支预置 `luci-app-airoha-npu`，MT7981 分支当前无预置包；两支的 `lucky` 均由 `add-feed-sources.sh` 追加的 feed 提供 |
-| `set-firmware-defaults.sh` | `make defconfig` **后**、编译**前**执行的钩子脚本 — 用 `sed` 改源码树里会被装进 rootfs 的文件，即固件的出厂默认值（恢复出厂和 `sysupgrade -n` 后仍是这里的值）。AN758x 三个编译目标共用一份，改动对三份产出同时生效；MT7981 分支把默认 LAN IP 改成 `10.0.0.1`，AN7581 分支该行保持注释 |
+| `set-firmware-defaults.sh` | `make defconfig` **后**、编译**前**执行的钩子脚本 — 用 `sed` 改源码树里会被装进 rootfs 的文件，即固件的出厂默认值（恢复出厂和 `sysupgrade -n` 后仍是这里的值）。AN758x 两个编译目标共用一份，改动对两份产出同时生效；MT7981 分支把默认 LAN IP 改成 `10.0.0.1`，AN7581 分支该行保持注释 |
 | `feeds.conf.default` | （可选）覆盖默认 feeds 软件源 |
 | `files/` | （可选）预置文件目录，将文件覆盖到固件根文件系统 |
 
