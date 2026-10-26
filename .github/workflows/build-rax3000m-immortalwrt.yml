@@ -35,7 +35,7 @@ on:
 env:
   # 源码仓库地址 (个人 ImmortalWrt fork，便于后续个性化改造；不再使用官方仓库与 hanwckf 的 mt798x 分支)
   REPO_URL: https://github.com/DenzelVincent/immortalwrt.git
-  # 源码分支 (个人 fork 的 24.10.6 分支，对应官方 v24.10.6；换版本只改这一行，feeds 由源码自带的 feeds.conf.default 锁定)
+  # 源码分支 (个人 fork 的 24.10.6 分支，对应官方 v24.10.6；换版本只改这一行，基础 feeds 由源码锁定，lucky 由 add-feed-sources.sh 追加)
   REPO_BRANCH: 24.10.6
   # 设备配置文件（make menuconfig 生成），工作流复制成 openwrt/.config
   # hashFiles 只接受字面量，改名须同步下面两条 cache key 里的文件名
@@ -47,7 +47,7 @@ env:
   EXPECT_DEVICE: CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_cmcc_rax3000m
   # 三个自定义脚本 = 流程里的三个插入点，执行阶段见各行注释
   # 新增插入点：这里加一行 + 工作流加一步调用 + 建对应脚本，三处一起
-  # 1) ./scripts/feeds update -a 之前 —— 增删第三方 feed 源
+  # 1) ./scripts/feeds update -a 之前 —— 增删第三方 feed 源（当前追加 lucky）
   SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
   # 2) ./scripts/feeds install -a 之后、make defconfig 之前 —— clone 非 feed 格式的第三方包（lucky 已走 feeds，当前无待 clone 包）
   SCRIPT_CLONE_PACKAGES: clone-packages.sh
@@ -197,7 +197,7 @@ jobs:
       run: cd openwrt && ./scripts/feeds install -a
 
     # ----------------------------------------------------------
-    # 步骤 8.5: 执行 clone-packages.sh 克隆非 feed 格式的第三方包（lucky 已由源码 feeds 提供，当前无待 clone 包；须在 feeds install 之后，理由见脚本头注释）
+    # 步骤 8.5: 执行 clone-packages.sh 克隆非 feed 格式的第三方包（lucky 已由 add-feed-sources.sh 追加的 feed 提供，当前无待 clone 包；须在 feeds install 之后，理由见脚本头注释）
     # ----------------------------------------------------------
     - name: Clone custom packages
       run: |

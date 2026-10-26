@@ -11,7 +11,7 @@
 # 本地编译同样要在 feeds install 之后跑一遍本脚本, 否则配置里选的包会被静默丢弃。
 # 当前预置: 无。lucky 已改由 feed 安装 —— gdy666/luci-app-lucky 的仓库根下是
 #       lucky/ 与 luci-app-lucky/ 两个包目录, 可由 add-feed-sources.sh 追加的 lucky feed
-#       (或 RAX3000M 源码自带的同一条 feed) 直接扫描, 不再 clone。
+#       直接扫描, 不再 clone。
 # 以后新增非 feed 包时按此格式添加, 并同步末尾自检:
 #   clone_pkg https://github.com/<owner>/<repo>.git package/<包名> warning|error
 
