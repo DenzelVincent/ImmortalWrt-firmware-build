@@ -86,7 +86,7 @@ ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
 > 每个 `luci-app-*` 都配套 `luci-i18n-<app>-zh-cn`（含 `luci-i18n-base-zh-cn`），简体中文界面内置；
 > 主题带 `luci-theme-argon`，`luci-theme-bootstrap` 一并保留。
 >
-> `luci-app-lucky` 来自 PonWrt 的 `lucky` feed（`feeds.conf.default` 中固定提交），随 feeds 安装自动就位；
+> `luci-app-lucky` 由 `add-feed-sources.sh` 追加的 `lucky` feed（固定提交）提供，随 feeds 安装自动就位；
 > `luci-app-airoha-npu` 不是 feed 格式，由工作流在 `make defconfig` 之前 `git clone` 到 `package/`。
 > 顺序反了 kconfig 不报错，只会静默不打包该界面；本地编译同样要先克隆再 `make defconfig`（见下面"本地编译"一节）。
 
@@ -155,10 +155,10 @@ ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
 
 ### `add-feed-sources.sh`
 
-feeds 更新**前**执行，改 `feeds.conf.default`。当前内容均为注释示例：
+feeds 更新**前**执行，改 `feeds.conf.default`。源码仓库（PonWrt）只保留默认 feed，第三方 feed 统一在这里追加：
 
-- 取消注释可启用 `helloworld` 等第三方 feed
-- 可添加 PassWall、kenzok8 等软件源
+- 当前追加 `lucky` feed（`gdy666/luci-app-lucky`，固定提交 `9449a52`；`grep` 判重，重复执行不会写第二条）
+- 其余示例（`helloworld`、PassWall、kenzok8）保持注释状态
 - feed 名只能用字母数字下划线，带连字符会让 `feeds update` 报 `Syntax error in feeds.conf.default`
 
 ### `clone-packages.sh`
@@ -170,7 +170,7 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 
 - `luci-app-airoha-npu`（AN758x 平台专用，失败打 `::error::`）
 
-`luci-app-lucky` 已在 PonWrt 的 `feeds.conf.default` 中作为 `lucky` feed 固定提交，不再由本脚本处理。
+`luci-app-lucky` 已改由 `add-feed-sources.sh` 追加的 `lucky` feed 提供，不再由本脚本处理。
 
 ### `set-firmware-defaults.sh`
 
@@ -185,14 +185,14 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 
 ### feeds 源
 
-本仓库不带 `feeds.conf.default`，用的是各源码分支自带的那份。三个分支都含 `pon_drivers`（Airoha PON 硬件驱动）与 `pon_userspace`（LuCI/ponctl/pond 等用户空间工具）两个 feed，区别只在指向哪个 fork：
+本仓库不带 `feeds.conf.default`，基础 feeds 用各源码分支自带的那份。三个分支都含 `pon_drivers`（Airoha PON 硬件驱动）与 `pon_userspace`（LuCI/ponctl/pond 等用户空间工具）两个 feed，区别只在指向哪个 fork：
 
 | 源码分支 | `pon_drivers` / `pon_userspace` 指向 |
 | --- | --- |
 | `master` | 上游 `pbs05/openwrt-pon-drivers`、`pbs05/openwrt-pon-userspace` |
 | `AN7581-GPON` / `AN7583-GPON` | `DenzelVincent` 的 fork（含 GPON 兼容性改造） |
 
-改 feed 源只改源码仓库那一处，源码与编译配置各管各的。若确需临时换源，在本仓库根目录新建 `feeds.conf.default`，工作流会 `mv` 到源码目录并计入 `dl/` 缓存 key。
+默认 feed 的源只改源码仓库那一处；第三方/编译期增量 feed（当前是 `lucky`）只在 `add-feed-sources.sh` 追加，不写进源码仓库，两边不要互相掺。若确需整体换源，在本仓库根目录新建 `feeds.conf.default`，工作流会 `mv` 到源码目录并计入 `dl/` 缓存 key。
 
 ## 云编译
 
@@ -259,11 +259,14 @@ git clone --depth 1 -b master https://github.com/DenzelVincent/ponwrt.git
 # git clone --depth 1 -b AN7583-GPON https://github.com/DenzelVincent/ponwrt.git
 cd ponwrt
 
+# 追加第三方 feed (lucky 由编译仓库的 add-feed-sources.sh 统一追加，必须在 feeds update 之前执行)
+sh /path/to/ImmortalWrt-firmware-build/add-feed-sources.sh
+
 # 更新并安装 feeds
 ./scripts/feeds update -a
 ./scripts/feeds install -a
 
-# 克隆第三方包 (lucky 已由 feeds 提供；airoha-npu 不在 feed 中，必须在 make defconfig 前完成，否则 kconfig 静默丢弃)
+# 克隆第三方包 (lucky 已由上面的 feed 提供；airoha-npu 不在 feed 中，必须在 make defconfig 前完成，否则 kconfig 静默丢弃)
 git clone --depth 1 https://github.com/DenzelVincent/luci-app-airoha-npu.git package/luci-app-airoha-npu
 
 # 选择配置（按上表选对应那份）

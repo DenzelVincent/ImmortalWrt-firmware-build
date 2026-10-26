@@ -16,3 +16,11 @@
 
 # echo "src-git kenzo https://github.com/kenzok8/openwrt-packages" >> ./feeds.conf.default
 # echo "src-git small https://github.com/kenzok8/small" >> ./feeds.conf.default
+
+# Lucky 大吉 (lucky 核心 + LuCI 界面：IPv6 端口转发 / DDNS / 反向代理)
+# 仓库根下是 lucky/ 与 luci-app-lucky/ 两个包目录，可直接作为 feed 扫描；
+# 固定提交避免上游改动影响编译。feed 名 lucky 不含连字符，符合上面的命名约束。
+# 源码仓库的 feeds.conf.default 只保留默认 feed，第三方 feed 统一在这里追加；
+# grep 判重保证重复执行不会写入第二条。
+grep -q '^src-git lucky ' feeds.conf.default || \
+  echo 'src-git lucky https://github.com/gdy666/luci-app-lucky.git^9449a5250c61f1aa8f16b2d8e04a9da25c26e735' >>feeds.conf.default
