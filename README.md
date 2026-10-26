@@ -26,8 +26,8 @@ ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
 > `REPO_BRANCH` 指向 PonWrt 源码仓库的分支：GPON 目标用的是含 GPON 内核 patch 的 `AN7581-GPON` 分支，
 > XGS-PON 用的是纯净基线 `master`。源码分支写死在各自工作流的 `env` 段，不由本仓库分支名推导。
 >
-> `CONFIG_NAME` 是缓存 key 的前缀，两个值（外加 MT7981 那条分支的 `mt7981`）互不为前缀，
-> 所以同一分支上的两份工作流不会恢复到彼此的缓存。
+> `CONFIG_NAME` 是缓存 key 的前缀：key 与恢复键都形如 `CONFIG_NAME-dl-…` / `CONFIG_NAME-ccache-…`，
+> 两份工作流的 `CONFIG_NAME` 不同，因此不会恢复到彼此的缓存。
 
 ## 支持设备
 
