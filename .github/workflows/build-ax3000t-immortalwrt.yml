@@ -46,9 +46,9 @@ env:
   EXPECT_DEVICE: CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_xiaomi_mi-router-ax3000t
   # 三个自定义脚本 = 流程里的三个插入点，执行阶段见各行注释
   # 新增插入点：这里加一行 + 工作流加一步调用 + 建对应脚本，三处一起
-  # 1) ./scripts/feeds update -a 之前 —— 增删第三方 feed 源
+  # 1) ./scripts/feeds update -a 之前 —— 增删第三方 feed 源（当前追加 lucky）
   SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
-  # 2) ./scripts/feeds install -a 之后、make defconfig 之前 —— clone 非 feed 格式的第三方包
+  # 2) ./scripts/feeds install -a 之后、make defconfig 之前 —— clone 非 feed 格式的第三方包（lucky 已走 feeds，当前无待 clone 包）
   SCRIPT_CLONE_PACKAGES: clone-packages.sh
   # 3) make defconfig 之后 —— 改固件出厂默认值 (默认 IP、DHCP 等)
   SCRIPT_SET_FIRMWARE_DEFAULTS: set-firmware-defaults.sh
@@ -196,7 +196,7 @@ jobs:
       run: cd openwrt && ./scripts/feeds install -a
 
     # ----------------------------------------------------------
-    # 步骤 8.5: 执行 clone-packages.sh 克隆非 feed 格式的第三方包（须在 feeds install 之后，理由见脚本头注释）
+    # 步骤 8.5: 执行 clone-packages.sh 克隆非 feed 格式的第三方包（lucky 已由 add-feed-sources.sh 追加的 feed 提供，当前无待 clone 包；须在 feeds install 之后，理由见脚本头注释）
     # ----------------------------------------------------------
     - name: Clone custom packages
       run: |
