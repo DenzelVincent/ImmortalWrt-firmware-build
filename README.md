@@ -76,6 +76,8 @@
 | `luci-app-firewall` | 防火墙管理 |
 | `luci-app-hd-idle` | USB 硬盘自动休眠 |
 | `luci-app-lucky` | Lucky 多合一工具（端口转发、DDNS、反向代理） |
+| `luci-app-mosdns` | MosDNS 分流 DNS（国内外域名分流、广告拦截、查询日志；同时预装 `mosdns` 核心与 `geo2txt`） |
+| `luci-app-mosdns-panel` | MosDNS 监控面板（缓存命中率图表、日志实时筛选、一键清缓存/恢复 dump） |
 | `luci-app-openclash` | OpenClash 代理客户端（LuCI 界面，内核需首次启动后下载） |
 | `luci-app-package-manager` | 软件包管理 |
 | `luci-app-pon` | PON 光猫管理（同时预装 `airoha-ponctl` / `airoha-pond` / `airoha-pon-debug`） |
@@ -84,14 +86,17 @@
 | `luci-app-upnp` | UPnP 自动端口映射 |
 | `luci-theme-argon` | Argon 主题（`luci-theme-bootstrap` 一并保留） |
 
-> 上表中 `luci-app-lucky` 由 `add-feed-sources.sh` 追加的 `lucky` feed（固定提交）提供，随 feeds 安装就位；
+> 上表中 `luci-app-lucky` 由 `add-feed-sources.sh` 追加的 `lucky` feed（固定提交）提供，
+> `luci-app-mosdns` 与 `luci-app-mosdns-panel` 分别由同一脚本插入的 `mosdns` feed 和追加的 `mosdns_panel` feed 提供，随 feeds 安装就位；
 > 其余来自源码分支自带的 feeds。源码仓库的 `feeds.conf.default` 不写入第三方 feed。
 > `luci-app-airoha-npu` 不是 feed 格式，改由 AN7581 分支的 `clone-packages.sh` 在工作流
 > "Clone custom packages" 步骤（`./scripts/feeds install -a` 之后、`make defconfig` **之前**）
 > `git clone` 到 `package/`——顺序反了 kconfig 不会报错，只会静默不打包该界面（见提交 `77684b6`）。
 > 清单以各设备配置文件里的 `CONFIG_PACKAGE_luci-app-*=y` 为准，本地编译时同样要先克隆再 `make defconfig`。
 >
-> 每个 `luci-app-*` 都配套 `luci-i18n-<app>-zh-cn`，简体中文界面随镜像内置。
+> 每个 `luci-app-*` 都配套 `luci-i18n-<app>-zh-cn`，简体中文界面随镜像内置；
+> 例外是 `luci-app-mosdns-panel`，上游没有 `po/` 目录、不产出语言包（界面文案本就写死中文）。
+> MosDNS 出厂是**关闭**状态（监听 `5335`），不与 AdGuard Home 抢 53 端口，要用时在 LuCI「服务 → MosDNS」里自行启用。
 
 ## 支持的设备
 
@@ -138,7 +143,7 @@
 | 文件 | 用途 |
 |---|---|
 | `an7581.config` / `an7581-gpon.config`（均在 `AN7581` 分支根目录）、`ax3000t.config` / `rax3000m.config`（在 `MT7981` 分支根目录） | 按设备型号命名的 OpenWrt menuconfig 配置，master 不存放配置文件 — 定义目标设备、内核选项、软件包；`ax3000t.config` 面向 hanwckf 21.02 的 `mediatek/mt7981`，`rax3000m.config` 面向个人 fork `24.10.6` 的 `mediatek/filogic`，两份配置的 target 符号与软件包段互不通用；工作流复制成 `openwrt/.config` 并无条件追加 `CONFIG_CCACHE=y`（`dl/` 与 `.ccache` 两层缓存默认启用；四份固件编译工作流各带 `clean_dl_cache` / `clean_ccache` 两个清理开关，默认不勾）；缓存 key 的前缀取自工作流 env 的 `CONFIG_NAME`，四个值（`an7581` / `an7581-gpon` / `ax3000t` / `rax3000m`）两两不同，key 与恢复键都带 `-dl-` / `-ccache-` 段，同一分支上的多份工作流才不会恢复到彼此的缓存；改设备名要同步 `CONFIG_FILE`、`CONFIG_NAME` 和 key 里 `hashFiles` 的字面文件名（该参数不接受变量）；勾选清理开关时对应的 `Clear ... cache` 步骤排在同层 `Cache ...` 之前，删掉本设备前缀的条目后本趟全量下载/重编、收尾重存（一趟即恢复热度），并有删净断言，没删净直接失败；`rax3000m.config` 另显式关闭 7 个 `trusted-firmware-a-mt79xx-ram-*`（上游 `include/trusted-firmware-a.mk` 给了 `DEFAULT:=TARGET_mediatek_filogic`，勾 filogic 就默认全选，各自只往 BIN_DIR 丢一个 UART 救砖 `mt79xx-ram-*-bl2.bin`，关掉省 7 次 TFA 交叉编译；`*-spim-nand-ddr4` 等隐藏变体不能关，镜像构建要用它们的 staging 产物） |
-| `add-feed-sources.sh` | feeds 更新**前**执行的钩子脚本 — 增删第三方软件源（改 `feeds.conf.default`）。feed 名只能用字母、数字、下划线，带连字符会让 `feeds update` 报语法错误。当前追加 `lucky` feed（`gdy666/luci-app-lucky`，固定提交；`grep` 判重）；源码仓库只保留默认 feed，第三方 feed 一律在本脚本追加 |
+| `add-feed-sources.sh` | feeds 更新**前**执行的钩子脚本 — 增删第三方软件源（改 `feeds.conf.default`）。feed 名只能用字母、数字、下划线，带连字符会让 `feeds update` 报语法错误。AN7581 分支当前插入 `mosdns` feed（`sbwml/luci-app-mosdns`，固定提交）并追加 `mosdns_panel`（`MayflyDestiny/luci-app-mosdns-panel`）与 `lucky`（`gdy666/luci-app-lucky`）两条，均 `grep` 判重；**`mosdns` 必须用 `sed` 插到 `src-git packages` 之前而非追加** —— `immortalwrt/packages` 里也有 `net/mosdns`（5.3.3，缺 `stats_api` 等二十多个补丁），而 `scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed，行序反了会装成官方那份、LuCI 统计页与面板拿不到数据，脚本插完立刻断言行序。MT7981 分支只追加 `lucky`。源码仓库只保留默认 feed，第三方 feed 一律在本脚本增删 |
 | `clone-packages.sh` | feeds 安装**后**、`make defconfig` **前**执行的钩子脚本 — clone 非 feed 格式的第三方包到 `package/<包名>/`。位置是硬约束：提前 clone 时 `+luci-base` 这类 feed 依赖解析不了，`make defconfig` 会静默跳过整包（编译不报错，见提交 `77684b6`）。AN7581 分支预置 `luci-app-airoha-npu`，MT7981 分支当前无预置包；两支的 `lucky` 均由 `add-feed-sources.sh` 追加的 feed 提供 |
 | `set-firmware-defaults.sh` | `make defconfig` **后**、编译**前**执行的钩子脚本 — 用 `sed` 改源码树里会被装进 rootfs 的文件，即固件的出厂默认值（恢复出厂和 `sysupgrade -n` 后仍是这里的值）。AN758x 两个编译目标共用一份，改动对两份产出同时生效；MT7981 分支把默认 LAN IP 改成 `10.0.0.1`，AN7581 分支该行保持注释 |
 | `feeds.conf.default` | （可选）覆盖默认 feeds 软件源 |
