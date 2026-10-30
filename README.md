@@ -91,7 +91,7 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 >
 > `luci-app-lucky` 由 `add-feed-sources.sh` 追加的 `lucky` feed（固定提交）提供，随 feeds 安装自动就位；
 > `luci-app-mosdns` 与 `luci-app-mosdns-panel` 分别由同一脚本插入的 `mosdns` feed 和追加的 `mosdns_panel` feed 提供，
-> 其中 `mosdns` feed 有行序硬约束（必须排在 `src-git packages` 之前，理由见脚本注释与工作流自检）；
+> 其中 `mosdns` feed 有行序硬约束（必须排在 `src-git packages` 之前，理由见脚本注释）；
 > `luci-app-airoha-npu` 不是 feed 格式，由工作流在 `make defconfig` 之前 `git clone` 到 `package/`。
 > 顺序反了 kconfig 不报错，只会静默不打包该界面；本地编译同样要先克隆再 `make defconfig`（见下面"本地编译"一节）。
 >
@@ -141,7 +141,6 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 │   └── release.config             # 发布配置增量
 ├── add-feed-sources.sh            # 插入点 1：feeds update 之前，增删第三方 feed 源
 ├── clone-packages.sh              # 插入点 2：feeds install 之后，clone 非 feed 格式的第三方包
-├── verify-preinstalled-apps.sh    # 插入点 3：make defconfig 之后，自检预装 app 有没有被静默丢行
 └── set-firmware-defaults.sh       # 插入点 3：make defconfig 之后，改固件出厂默认值
 ```
 
@@ -156,8 +155,8 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 
 ## 脚本说明
 
-四个脚本对应编译流程里的三个插入点（后两个同在 `make defconfig` 之后，自检先跑、改默认值后跑），工作流按 `env` 段的 `SCRIPT_ADD_FEED_SOURCES` /
-`SCRIPT_CLONE_PACKAGES` / `SCRIPT_VERIFY_PREINSTALLED_APPS` / `SCRIPT_SET_FIRMWARE_DEFAULTS` 四个变量调用。文件名写"做什么"，
+三个脚本对应编译流程里的三个插入点，工作流按 `env` 段的 `SCRIPT_ADD_FEED_SOURCES` /
+`SCRIPT_CLONE_PACKAGES` / `SCRIPT_SET_FIRMWARE_DEFAULTS` 三个变量调用。文件名写"做什么"，
 执行阶段写在各脚本的头注释里；两份编译目标共用同一批脚本，改动对两份产出同时生效。
 
 ### `add-feed-sources.sh`
@@ -167,7 +166,7 @@ feeds 更新**前**执行，改 `feeds.conf.default`。源码仓库（PonWrt）�
 - `mosdns` feed（`sbwml/luci-app-mosdns`，固定提交 `dbdd91a`）用 `sed` **插到 `src-git packages` 之前**，不是追加：
   `immortalwrt/packages` 里也有一个 `net/mosdns`（5.3.3），而 `scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed。
   行序反了会装成官方那份 —— 缺 `stats_api` / query log / `adblock_set` 等二十多个补丁，LuCI 统计页和面板都拿不到数据，
-  还会和 `luci-app-mosdns` 自带的 `/etc/init.d/mosdns` 撞文件。脚本插完立刻断言行序，`verify-preinstalled-apps.sh` 在 `make defconfig` 后再查一遍软链落点
+  还会和 `luci-app-mosdns` 自带的 `/etc/init.d/mosdns` 撞文件。脚本插完立刻断言行序
 - `mosdns_panel` feed（`MayflyDestiny/luci-app-mosdns-panel`，固定提交 `526ad2a`）追加到末尾即可，无同名包冲突。
   它是 Lua 应用，`luci.mk` 检测到 `luasrc/` 会自动补 `+luci-lua-runtime`，配置文件里不用手写依赖
 - `lucky` feed（`gdy666/luci-app-lucky`，固定提交 `9449a52`）追加到末尾
@@ -185,29 +184,6 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 - `luci-app-airoha-npu`（AN758x 平台专用，失败打 `::error::`）
 
 `luci-app-lucky`、`luci-app-mosdns`、`luci-app-mosdns-panel` 都由 `add-feed-sources.sh` 处理的 feed 提供，不走本脚本。
-
-### `verify-preinstalled-apps.sh`
-
-`make defconfig` **后**、`make download` 与正式编译**前**执行，用法 `verify-preinstalled-apps.sh <源配置文件路径>`。
-传的是仓库根目录那份手工维护的配置，**不是** `openwrt/.config` —— `.config` 是展开后的结果，
-被丢掉的行在里面根本不存在，只有拿"意图"对"结果"才能发现静默丢行。
-
-排在编译之前是有意的：feed 拉取失败或包名写错时 kconfig 只静默丢行，编译一路绿灯、产出没有对应界面的固件
-（2026-10-10 `airoha-npu` 就是这么丢的）。这一步失败只损失十几分钟，不会白编几小时。做两件事：
-
-1. **同名包冲突**：查软链落点。`scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed，
-   装错版本不会丢行、`CONFIG_PACKAGE_x=y` 照样在，第 2 项抓不到，只能直接看它链到了哪个 feed。
-   表里当前只有 `mosdns` 一条（`package/feeds/packages/mosdns` 不得存在），格式 `<包名>|<不应存在的路径>|<装错的后果>`
-2. **静默丢行**：从源配置抽出所有 `CONFIG_PACKAGE_luci-*=y`（app / 语言包 / 主题 / 库全覆盖）逐个核对仍在 `.config`，
-   再并上 `EXTRA_REQUIRED` 里那几个 DEPENDS 派生、源配置没写但缺了界面就变死界面的包
-   （当前是 mosdns 那条链：`mosdns`、`geo2txt`、`v2ray-geoip`、`v2ray-geosite`、`luci-lua-runtime`、`curl`）。
-   缺的一次性全部列出再失败，不用跑 N 趟才看全
-
-只扫 `luci-*` 而不扫全部 `CONFIG_PACKAGE_`：源配置里还有 `MAC80211_DEBUGFS`、`TAR_BZIP2` 这类父包子选项，
-能否留下取决于目标平台是否启用父包，一律硬断言会误伤。
-
-新增 app 时**不用改本脚本**（第 2 项自动从源配置抽），只有新 app 带了 DEPENDS 派生的关键依赖才需要补进 `EXTRA_REQUIRED`；
-新的第三方包若与官方 feed 同名，则在第 1 项的冲突表里加一行。
 
 ### `set-firmware-defaults.sh`
 
@@ -244,13 +220,12 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 7. 更新并安装 feeds
 8. 执行 `clone-packages.sh` clone 非 feed 格式的第三方包（必须在 feeds install 之后，理由见"脚本说明"）
 9. 加载 APK 仓库签名密钥 (可选，未配置则跳过)
-10. 将工作流 `CONFIG_FILE` 指向的那份配置（已含 release 增量）复制为 `openwrt/.config`，无条件追加 `CONFIG_CCACHE=y` → `make defconfig` 展开（展开后自检这一行还在）
-11. 执行 `verify-preinstalled-apps.sh` 自检预装 app（同名包冲突 + 静默丢行），失败即止，不进后面的下载与编译
-12. 执行 `set-firmware-defaults.sh` 修改固件出厂默认参数
-13. 预下载软件包源码 (`make download`)
-14. 编译固件：全并发 → 同级并发重试 → 才降级 `make -j1 V=s`（ccache 取自步骤 10 写入的 .config，命令行不带参数）
-15. 收集固件镜像到 `release/<设备>/`，上传 artifact，打包 `tar.zst` 发布到 GitHub Release
-16. 清理旧 workflow runs (保留 7 天 / 至少 3 条) 和旧 Release (保留最近 3 个)
+10. 将工作流 `CONFIG_FILE` 指向的那份配置复制为 `openwrt/.config`，无条件追加 `CONFIG_CCACHE=y` → `make defconfig` 展开（展开后自检这一行还在）
+11. 执行 `set-firmware-defaults.sh` 修改固件出厂默认参数
+12. 预下载软件包源码 (`make download`)
+13. 编译固件：全并发 → 同级并发重试 → 才降级 `make -j1 V=s`（ccache 取自步骤 10 写入的 .config，命令行不带参数）
+14. 收集固件镜像到 `release/<设备>/`，上传 artifact，打包 `tar.zst` 发布到 GitHub Release
+15. 清理旧 workflow runs (保留 7 天 / 至少 3 条) 和旧 Release (保留最近 3 个)
 
 ### 触发方式
 
@@ -311,10 +286,6 @@ cp an7581.config .config
 
 # 开始编译
 make defconfig
-
-# 自检预装 app (与工作流同一个脚本)：feed 行序错或拉取失败时 kconfig 只静默丢行，编译照样成功、固件里就是没这个界面
-# 参数传仓库根目录那份源配置，不是刚生成的 .config（被丢掉的行在 .config 里根本不存在，无从对比）
-sh /path/to/ImmortalWrt-firmware-build/verify-preinstalled-apps.sh /path/to/ImmortalWrt-firmware-build/an7581.config
 
 make -j$(nproc)
 ```
