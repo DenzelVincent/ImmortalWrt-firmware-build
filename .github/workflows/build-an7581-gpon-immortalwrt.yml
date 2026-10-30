@@ -45,9 +45,9 @@ env:
   DEVICE_NAME: XG-040G-MD
   SUBTARGET: an7581
   # 三个自定义脚本 = 流程里的三个插入点，执行阶段见各行注释
-  # 1) ./scripts/feeds update -a 之前 —— 增删第三方 feed 源（当前追加 lucky）
+  # 1) ./scripts/feeds update -a 之前 —— 增删第三方 feed 源（当前插入 mosdns，追加 mosdns_panel 与 lucky）
   SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
-  # 2) ./scripts/feeds install -a 之后、make defconfig 之前 —— clone 非 feed 格式的第三方包（lucky 由 add-feed-sources.sh 追加，仅 npu）
+  # 2) ./scripts/feeds install -a 之后、make defconfig 之前 —— clone 非 feed 格式的第三方包（lucky / mosdns / mosdns_panel 由 add-feed-sources.sh 处理，此处仅 npu）
   SCRIPT_CLONE_PACKAGES: clone-packages.sh
   # 3) make defconfig 之后 —— 改固件出厂默认值 (默认 IP、DHCP 等)
   SCRIPT_SET_FIRMWARE_DEFAULTS: set-firmware-defaults.sh
@@ -206,7 +206,7 @@ jobs:
       run: cd openwrt && ./scripts/feeds install -a
 
     # ----------------------------------------------------------
-    # 步骤 8.5: 执行 clone-packages.sh 克隆非 feed 格式的第三方包（lucky 已由 add-feed-sources.sh 追加的 feed 提供，此处仅 airoha-npu；须在 feeds install 之后）
+    # 步骤 8.5: 执行 clone-packages.sh 克隆非 feed 格式的第三方包（lucky / mosdns / mosdns_panel 已由 add-feed-sources.sh 增删的 feed 提供，此处仅 airoha-npu；须在 feeds install 之后）
     # ----------------------------------------------------------
     - name: Clone custom packages
       run: |
@@ -230,7 +230,8 @@ jobs:
 
     # ----------------------------------------------------------
     # 步骤 10: 设备配置复制成 openwrt/.config 并追加 CONFIG_CCACHE=y
-    # make defconfig 生成完整配置；files/ 存在则作为固件预置文件；最后执行 set-firmware-defaults.sh
+    # make defconfig 生成完整配置；files/ 存在则作为固件预置文件；
+    # 随后执行 set-firmware-defaults.sh
     # ----------------------------------------------------------
     - name: Load custom config
       run: |
