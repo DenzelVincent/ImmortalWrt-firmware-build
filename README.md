@@ -97,6 +97,15 @@ AN7581 XGS-PON 编译目标的插件清单如下，NPU 固件包为 `airoha-en75
 > 每个 `luci-app-*` 都配套 `luci-i18n-<app>-zh-cn`，简体中文界面随镜像内置。
 > MosDNS 出厂是**关闭**状态（监听 `5335`），不会开机就占住 53 端口，要用时在 LuCI「服务 → MosDNS」里自行启用。
 
+> **AN7581 上这些预装 app 后续怎么升级**：官方下载站不托管 `pon_drivers` / `pon_userspace` /
+> `lucky` / `mosdns` 四个 feed，`an7581.config` 把它们的 `CONFIG_FEED_*` 置 `m`，设备默认源列表
+> `distfeeds.list` 因此只留官方地址（`=m` 只影响源列表，不影响包是否编译预装进固件）。
+> 这四个 feed 的仓库由 make 用固件同一把私钥签名生成，AN7581 工作流的 `publish_feeds` 开关
+> 把它们发布到本仓库 Pages，固件出厂的 `/etc/apk/repositories.d/customfeeds.list` 指向该站点。
+> 设备上只 `apk add` 需要的单个包，不要跑 `apk upgrade -a`（官方源是每日 snapshot，全局升级
+> 会与固件编译那天的基线错配）。MT7981 平台用 opkg，上述 apk 源文件与 `publish_feeds` 均不适用。
+> 完整口径见 `AN7581` 分支 README 的「设备端软件源与 app 升级」。
+
 ## 支持的设备
 
 ### MT7981 平台 - 固件 (ImmortalWrt)

@@ -30,6 +30,12 @@ on:
         description: 编译成功后创建 GitHub Release（默认关闭，关闭时只保留 artifact）
         type: boolean
         default: false
+      # 自建 feed 源开关：门控 stage-feeds / pages 两个环节，默认关闭；关闭时 feed 仓库随整镜像一起丢弃。
+      # 开启前提：仓库 Settings → Pages 把 Source 设为 "GitHub Actions"，否则 pages job 会失败（不静默跳过）。
+      publish_feeds:
+        description: 把自定义 feed 的 apk 仓库发布到本仓库 Pages（需先在 Settings→Pages 选 GitHub Actions）
+        type: boolean
+        default: false
 
 env:
   # 源码仓库地址
@@ -44,13 +50,18 @@ env:
   # 目标设备和子目标（编译产物路径使用）
   DEVICE_NAME: XG-040G-MD
   SUBTARGET: an7581
-  # 三个自定义脚本 = 流程里的三个插入点，执行阶段见各行注释
+  # 四个自定义脚本 = 流程里的四个插入点，执行阶段见各行注释
   # 1) ./scripts/feeds update -a 之前 —— 增删第三方 feed 源（当前插入 mosdns，追加 lucky）
   SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
   # 2) ./scripts/feeds install -a 之后、make defconfig 之前 —— clone 非 feed 格式的第三方包（lucky / mosdns 由 add-feed-sources.sh 处理，此处仅 npu）
   SCRIPT_CLONE_PACKAGES: clone-packages.sh
   # 3) make defconfig 之后 —— 改固件出厂默认值 (默认 IP、DHCP 等)
   SCRIPT_SET_FIRMWARE_DEFAULTS: set-firmware-defaults.sh
+  # 4) 编译完成之后、上传 Pages 之前 —— 把各 feed 的签名仓库拷成站点目录并与出厂源对账
+  SCRIPT_PUBLISH_FEED_REPOS: publish-feed-repos.sh
+  # 发布到 Pages 自建源的 feed（须与 files/etc/apk/repositories.d/customfeeds.list 里的条目一致，
+  # 不一致会在对账步骤里失败；架构目录由脚本从 bin/packages/ 反查，不写死在这里）
+  PUBLISH_FEEDS: pon_drivers pon_userspace lucky mosdns
   # 编译环境时区
   TZ: Asia/Shanghai
   # 可选覆盖：本仓库根目录存在该文件时才 mv 覆盖源码自带 feeds，当前不存在
@@ -63,6 +74,7 @@ jobs:
 
     permissions:
       actions: write    # 允许上传编译产物 artifact
+      pages: write      # 允许把 feed 仓库暂存成 Pages artifact（publish_feeds 勾选时）
 
     steps:
     # ----------------------------------------------------------
@@ -313,6 +325,28 @@ jobs:
         name: ImmortalWrt_${{ env.FW_VERSION }}_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: release/${{ env.DEVICE }}
 
+    # ----------------------------------------------------------
+    # 步骤 16: 执行 publish-feed-repos.sh 把各 feed 已签名的仓库拷成 Pages 站点目录
+    # 索引与签名是 make 的 index 目标顺手做好的（apk mkndx --sign private-key.pem），脚本只搬运，
+    # 并逐条核对出厂 customfeeds.list 指向的路径本次确实产出了，缺文件就在这一步失败
+    # ----------------------------------------------------------
+    - name: Stage feed repositories
+      id: feeds
+      if: inputs.publish_feeds && !cancelled()
+      run: |
+        chmod +x $SCRIPT_PUBLISH_FEED_REPOS
+        sh $SCRIPT_PUBLISH_FEED_REPOS
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    # ----------------------------------------------------------
+    # 步骤 17: 站点目录暂存成 Pages artifact（真正部署由 pages job 执行）
+    # ----------------------------------------------------------
+    - name: Upload Pages artifact
+      if: steps.feeds.outputs.status == 'success' && !cancelled()
+      uses: actions/upload-pages-artifact@v4
+      with:
+        path: feed-site
+
   # ------------------------------------------------------------
   # Release 发布 job：编译成功后打包上传 Release，并清理旧 runs / Releases
   # 由 workflow_dispatch 的 release 开关控制，默认关闭；关闭时只保留 artifact
@@ -330,11 +364,15 @@ jobs:
     steps:
 
       # ----------------------------------------------------------
-      # 步骤 1: 下载本次 run 的全部 artifact（每个解压到同名子目录）
+      # 步骤 1: 下载本次 run 的固件 artifact（每个解压到同名子目录）
+      # 必须用 pattern 排除 Pages artifact：勾了 publish_feeds 时本次 run 里还有个 github-pages，
+      # 全量下载会让下面按目录打包的循环把它也当成一台设备的固件产出一个 zip
       # ----------------------------------------------------------
-      - name: Download all artifacts
+      - name: Download firmware artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: ImmortalWrt_*
+          merge-multiple: false
           path: artifacts
 
       # ----------------------------------------------------------
@@ -405,3 +443,32 @@ jobs:
           delete_tag_pattern: _XG-040G-MD_
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ------------------------------------------------------------
+  # Pages 发布 job：把 build 暂存的 feed 仓库部署成设备可访问的自建源
+  # 站点地址 https://<owner>.github.io/<本仓库名>/packages/<arch>/<feed>/packages.adb，
+  # 固件出厂的 files/etc/apk/repositories.d/customfeeds.list 写的就是这批地址
+  # 由 workflow_dispatch 的 publish_feeds 开关门控，默认关闭；开启前需把仓库 Pages Source 设为 GitHub Actions
+  # ------------------------------------------------------------
+  pages:
+    name: Publish feed repos
+    runs-on: ubuntu-latest
+    needs: build
+    if: needs.build.result == 'success' && !cancelled() && inputs.publish_feeds
+
+    permissions:
+      pages: write      # 允许部署 Pages 站点
+      id-token: write   # 部署要用 OIDC token 向 GitHub 换 Pages 部署凭证
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+
+      # ----------------------------------------------------------
+      # 步骤 1: 部署 build 步骤 17 暂存的 Pages artifact（整站替换，站点上只留最近一趟编译的包）
+      # ----------------------------------------------------------
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
