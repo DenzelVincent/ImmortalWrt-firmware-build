@@ -97,6 +97,8 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 >
 > MosDNS 出厂是**关闭**状态（`/etc/config/mosdns` 里 `enabled '0'`、监听 `5335`），不会开机就占住 53 端口；
 > 要用时在 LuCI「服务 → MosDNS」里自行启用，统计页读的是 mosdns 的 API 端口，默认 `9091`，开箱即用。
+>
+> 这些 app 的 feed 官方站不托管，默认源列表里已注释掉；设备端手工升级见「设备端软件源与 app 升级」一节。
 
 ### PON 平台组件
 
@@ -139,7 +141,10 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 │   └── release.config             # 发布配置增量
 ├── add-feed-sources.sh            # 插入点 1：feeds update 之前，增删第三方 feed 源
 ├── clone-packages.sh              # 插入点 2：feeds install 之后，clone 非 feed 格式的第三方包
-└── set-firmware-defaults.sh       # 插入点 3：make defconfig 之后，改固件出厂默认值
+├── set-firmware-defaults.sh       # 插入点 3：make defconfig 之后，改固件出厂默认值
+├── publish-feed-repos.sh          # 插入点 4：编译完成之后，把各 feed 的已签名仓库拷成 Pages 站点
+└── files/                         # 固件出厂预置文件，工作流整目录 mv 进 openwrt/，rootfs 生成时覆盖同名文件
+    └── etc/apk/repositories.d/customfeeds.list   # 设备端自建源清单，指向本仓库 Pages
 ```
 
 > 设备配置按型号命名放在仓库根，是为了和编译期真正的 `openwrt/.config` 区分开：
@@ -150,12 +155,13 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 > 字面量；各工作流只哈希自己那份，改一台设备的配置不会让另一台的缓存失效。
 >
 > 本仓库根目录**不放** `feeds.conf.default`（工作流留着 `[ -e ]` 覆盖入口，按需自建）。
+> `files/` 同理是留着入口后新增的：只放需要随固件出厂的文件，别往里塞编译期脚本。
 
 ## 脚本说明
 
-三个脚本对应编译流程里的三个插入点，工作流按 `env` 段的 `SCRIPT_ADD_FEED_SOURCES` /
-`SCRIPT_CLONE_PACKAGES` / `SCRIPT_SET_FIRMWARE_DEFAULTS` 三个变量调用。文件名写"做什么"，
-执行阶段写在各脚本的头注释里；各编译目标共用同一批脚本，改动对所有产出生效。
+四个脚本对应编译流程里的四个插入点，工作流按 `env` 段的 `SCRIPT_ADD_FEED_SOURCES` /
+`SCRIPT_CLONE_PACKAGES` / `SCRIPT_SET_FIRMWARE_DEFAULTS` / `SCRIPT_PUBLISH_FEED_REPOS`
+四个变量调用。文件名写"做什么"，执行阶段写在各脚本的头注释里；各编译目标共用同一批脚本，改动对所有产出生效。
 
 ### `add-feed-sources.sh`
 
@@ -192,6 +198,50 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 - 可添加其他 `sed` 命令修改 DHCP、主机名等默认配置（DHCP 地址池出厂值是
   `start=100` / `limit=150`，即 `.100`–`.249`，一般不必显式改）
 
+### `publish-feed-repos.sh`
+
+编译**完成后**、上传 Pages **前**执行，把各自定义 feed 已经生成好的仓库（`packages.adb` + `*.apk`）
+拷成站点目录 `feed-site/packages/<arch>/<feed>/`。要点：
+
+- 索引和签名不是本脚本做的：构建系统的 `index` 目标对每个 feed 目录跑过
+  `apk mkndx --sign private-key.pem`，私钥就是步骤 9 还原的那对，固件 `/etc/apk/keys/` 里是配套公钥，
+  所以设备装这里的包**不需要** `--allow-untrusted`。本脚本只搬运，不重签。
+- 架构目录从 `openwrt/bin/packages/` 反查，不写死 `aarch64_cortex-a53`，换设备不用改脚本。
+- 拷完逐条核对 `files/etc/apk/repositories.d/customfeeds.list` 里的 URL：`/packages/` 之后的路径
+  本次站点里必须真有对应文件，缺就在编译 job 里 `::error::` 失败——避免发出去一个装不上任何东西的站点。
+- 要发布哪些 feed 由工作流 `env.PUBLISH_FEEDS` 决定，它和出厂清单是一体两面，改一处要同步另一处。
+
+## 设备端软件源与 app 升级
+
+三个事实决定了这套口径，改配置前先对齐：
+
+1. **官方下载站不托管本项目 feed**。`%U` 在编译期展开成 `CONFIG_VERSION_REPO`
+   （默认 `https://downloads.immortalwrt.org/snapshots`），所有 feed 共用这一个基地址，
+   于是 `pon_drivers` / `pon_userspace` / `lucky` / `mosdns` / `video` 的仓库地址必然 404。
+2. **`CONFIG_FEED_*` 只管设备端的源列表，不管包编不编进固件**（`include/feeds.mk` 里它只有生成
+   `distfeeds.conf` / `repositories.d` 两处消费点）。所以 `an7581.config` 里把上述 feed 置 `m`：
+   默认源列表只剩官方地址，`apk update` 不再报死链，而 app 照旧预装。**不要**为了"分离"把
+   feed 从 `feeds.conf.default` 挪走——`scripts/feeds install -a` 就不拉取它了，包会被
+   `make defconfig` 静默跳过（同 `clone-packages.sh` 头注释里 `77684b6` 那个坑）。
+3. **`distfeeds.list` 是构建生成的，`customfeeds.list` 才是给用户改的**。前者每次刷机重写，
+   后者由 apk 包安装并登记为 conffile，sysupgrade 保留。自建源一律走后者。
+
+于是分工是：默认源=官方包（可正常 `apk upgrade`），自建源=本项目 feed，由勾选 `publish_feeds`
+的那趟编译发布到本仓库 Pages，站点地址即 `files/etc/apk/repositories.d/customfeeds.list` 里那几条。
+
+**升级口径：只手工装单个包，不跑全局升级。** 官方源是每日 snapshot，`apk upgrade -a` 会把
+`luci-base`、`libc` 这些依赖拉到与固件编译那天不一致的版本，而自建站点上的包是按编译那天的基线做的。
+
+```sh
+apk update && apk add --simulate luci-app-lucky     # 先看会不会连带升级官方包
+apk add luci-app-lucky                              # 只列出该包及其缺失依赖时才执行
+```
+
+两点补充：`kmod-*`（在 `pon_drivers` 里）依赖完全一致的内核版本，换过内核就别手装；
+手装的包只存在于 overlay，`sysupgrade` 与恢复出厂都会回退到固件预装版本——要固化就更新
+`add-feed-sources.sh` 里的 feed pin，让它随下趟编译进镜像。站点每次部署整站替换，
+只保留最近一趟编译的包，历史版本去对应 run 的 artifact 里找。
+
 ### feeds 源
 
 本仓库不带 `feeds.conf.default`，基础 feeds 用源码分支自带的那份。源码 `master` 分支含 `pon_drivers`（Airoha PON 硬件驱动）与 `pon_userspace`（LuCI/ponctl/pond 等用户空间工具）两个 feed，指向上游 `pbs05/openwrt-pon-drivers`、`pbs05/openwrt-pon-userspace`。
@@ -216,16 +266,21 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 12. 预下载软件包源码 (`make download`)
 13. 编译固件：全并发 → 同级并发重试 → 才降级 `make -j1 V=s`（ccache 取自步骤 10 写入的 .config，命令行不带参数）
 14. 收集固件镜像到 `release/<设备>/`，上传 artifact，打包 `tar.zst` 发布到 GitHub Release
-15. 清理旧 workflow runs (保留 7 天 / 至少 3 条) 和旧 Release (保留最近 3 个)
+15. 执行 `publish-feed-repos.sh` 把各 feed 的已签名仓库拷成 `feed-site/`，与出厂 `customfeeds.list` 逐条对账，暂存成 Pages artifact（仅勾选 `publish_feeds` 时）
+16. `pages` job 把该站点部署到 GitHub Pages（仅勾选 `publish_feeds` 时；Pages Source 须已设为 GitHub Actions）
+17. 清理旧 workflow runs (保留 7 天 / 至少 3 条) 和旧 Release (保留最近 3 个)
 
 ### 触发方式
 
-在 GitHub Actions 页面左侧**先选工作流**，再点 "Run workflow"，按需勾选两个缓存清理开关：
+在 GitHub Actions 页面左侧**先选工作流**，再点 "Run workflow"，按需勾选开关（两个缓存清理 + 两个发布）：
 
 - `clean_dl_cache` — 先清空 `dl/` 下载缓存再编译。改了某个 package 的源码版本或下载地址
   （Makefile 里的 `PKG_VERSION` / `PKG_SOURCE_VERSION` / `PKG_SOURCE_URL`）而缓存里仍是同名旧包时
   勾选；这些字段不在缓存 key 的哈希范围内，改了不会自动失效。
 - `clean_ccache` — 先清空 `openwrt/.ccache` 编译对象缓存再编译。怀疑复用到了不对的产物时勾选。
+- `release` — 编译成功后创建 GitHub Release（只发固件镜像压缩包），默认关闭，关闭时只保留 artifact。
+- `publish_feeds` — 把各 feed 的 apk 仓库发布到本仓库 Pages，供设备端 `apk add` 单个包，默认关闭。
+  首次勾选前要在 仓库 Settings → Pages 把 Source 设为 **GitHub Actions**；没设好就失败，不静默跳过。
 
 两层缓存默认都是启用的：`Cache ...` 步骤没有 if，恒定恢复 + 收尾保存，`CONFIG_CCACHE=y` 由
 `Load custom config` 步骤无条件写进 `.config`。勾选清理开关时，对应的 `Clear ... cache` 步骤排在
