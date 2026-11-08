@@ -28,12 +28,17 @@
 | `build-ax3000t-immortalwrt.yml` | MT7981 / master | 编译小米 AX3000T 固件（源码 hanwckf `openwrt-21.02`；standard / stock / AN8855 变体按配置勾选） | 手动触发 (`workflow_dispatch`) |
 | `build-rax3000m-immortalwrt.yml` | MT7981 / master | 编译 CMCC RAX3000M 固件（源码个人 fork `24.10.6`，`mediatek/filogic` 子目标；同一 profile 也产出 eMMC 引导件，收集时排除，Release 只放 SPI-NAND 四件） | 手动触发 (`workflow_dispatch`) |
 | `build-mt7981-u-boot.yml` | MT7981 / master | 并行编译 MT7981 平台所有板型变体的 U-Boot 引导加载器 | 手动触发 (`workflow_dispatch`) |
-| `build-an7581-immortalwrt.yml` | AN7581 / master | 编译 AN7581 平台光猫固件 (XGS-PON)，源码分支 `REPO_BRANCH=master` | 手动触发 (`workflow_dispatch`) |
+| `build-an7581-immortalwrt.yml` | AN7581 / master | 编译 AN7581 平台光猫固件 (XGS-PON)，源码分支 `REPO_BRANCH=master`；勾选 `publish_feeds` 时顺带把自建 feed 仓库发布到本仓库 Pages | 手动触发 (`workflow_dispatch`) |
+| `publish-feed-repos.yml` | AN7581 / master | 只编 AN7581 发布集里的 app 包并签名发布到 Pages，不产固件镜像；用于 app 源码更新后单独发版 | 手动触发 (`workflow_dispatch`) |
 
 > `REPO_URL` / `REPO_BRANCH` 写死在各工作流的 `env` 段（AN758x 指向 PonWrt 源码仓库的分支，
 > RAX3000M 指向个人 fork `DenzelVincent/immortalwrt` 的 `24.10.6` 分支），不由本仓库分支名推导；
 > 这些副本留在 master 是因为非默认分支的工作流必须先在默认分支存在才能手动运行。
-> 源码仓库只保留默认 feed，`lucky` 等第三方 feed 由各分支的 `add-feed-sources.sh` 统一追加。
+> 源码仓库只保留默认 feed，`mosdns` / `lucky` / `airoha_npu` 等增量 feed 由各分支的 `add-feed-sources.sh` 统一追加。
+>
+> `publish-feed-repos.yml` 与 `build-an7581-immortalwrt.yml` 用同一份 `an7581.config`，两条 cache key
+> 逐字相同（共用同一份 `dl/` 与 `.ccache`），选中哪些包也由同一份配置决定；它省掉的是内核与镜像组装，
+> 工具链和 `luci-base`、`lua` 这类依赖省不掉，缓存命中也要几十分钟。
 
 ## MT7981 平台默认配置
 
@@ -87,21 +92,29 @@ AN7581 XGS-PON 编译目标的插件清单如下，NPU 固件包为 `airoha-en75
 | `luci-theme-argon` | Argon 主题（`luci-theme-bootstrap` 一并保留） |
 
 > 上表中 `luci-app-lucky` 由 `add-feed-sources.sh` 追加的 `lucky` feed（固定提交）提供，
-> `luci-app-mosdns` 由同一脚本插入的 `mosdns` feed 提供，随 feeds 安装就位；
-> 其余来自源码分支自带的 feeds。源码仓库的 `feeds.conf.default` 不写入第三方 feed。
-> `luci-app-airoha-npu` 不是 feed 格式，改由 AN7581 分支的 `clone-packages.sh` 在工作流
-> "Clone custom packages" 步骤（`./scripts/feeds install -a` 之后、`make defconfig` **之前**）
-> `git clone` 到 `package/`——顺序反了 kconfig 不会报错，只会静默不打包该界面（见提交 `77684b6`）。
-> 清单以各设备配置文件里的 `CONFIG_PACKAGE_luci-app-*=y` 为准，本地编译时同样要先克隆再 `make defconfig`。
+> `luci-app-mosdns` 由同一脚本插入的 `mosdns` feed 提供，`luci-app-airoha-npu` 由同一脚本追加的
+> `airoha_npu` feed（本仓库自维护，不锁提交）提供，随 feeds 安装就位；其余来自源码分支自带的 feeds。
+> 源码仓库的 `feeds.conf.default` 不写入增量 feed。
+> 增量包一律做成 feed 声明、不 clone 进 `package/`：clone 进去的包按 `include/package-dumpinfo.mk`
+> 的 `Repository: $(if $(FEED),$(FEED),base)` 归进 base 仓库，与源码树自带包混在一起，既不能单独发布
+> 也不能单独 `apk add`；声明成 feed 才落进 `bin/packages/<arch>/<feed>/`。声明本身也不能挪出
+> `feeds.conf.default`——`scripts/feeds` 只读那两个文件，少一条 `src-git` 就是 `install -a` 不装、
+> `make defconfig` 静默丢包（见提交 `77684b6`）。当 feed 用的仓库还必须是 feed 形态（包在本仓库里
+> 一层子目录），否则 `include/scan.mk` 的 `find -mindepth 1` 会跳过根目录那份 Makefile，扫出 0 个包。
+> 清单以各设备配置文件里的 `CONFIG_PACKAGE_luci-app-*=y` 为准，本地编译时同样要先跑
+> `add-feed-sources.sh` 再 `./scripts/feeds update -a`。
 >
 > 每个 `luci-app-*` 都配套 `luci-i18n-<app>-zh-cn`，简体中文界面随镜像内置。
 > MosDNS 出厂是**关闭**状态（监听 `5335`），不会开机就占住 53 端口，要用时在 LuCI「服务 → MosDNS」里自行启用。
 
-> **AN7581 上这些预装 app 后续怎么升级**：官方下载站不托管 `pon_drivers` / `pon_userspace` /
-> `lucky` / `mosdns` 四个 feed，`an7581.config` 把它们的 `CONFIG_FEED_*` 置 `m`，设备默认源列表
-> `distfeeds.list` 因此只留官方地址（`=m` 只影响源列表，不影响包是否编译预装进固件）。
-> 这四个 feed 的仓库由 make 用固件同一把私钥签名生成，AN7581 工作流的 `publish_feeds` 开关
-> 把它们发布到本仓库 Pages，固件出厂的 `/etc/apk/repositories.d/customfeeds.list` 指向该站点。
+> **AN7581 上这些预装 app 后续怎么升级**：官方下载站不托管本项目 feed，`an7581.config` 把它们的
+> `CONFIG_FEED_*` 置 `m`，设备默认源列表 `distfeeds.list` 因此只留官方地址（`=m` 只影响源列表，
+> 不影响包是否编译预装进固件）。发布到 Pages 的是 `pon_userspace` / `lucky` / `mosdns` / `airoha_npu`
+> 四个 feed，仓库由 make 用固件同一把私钥签名生成，两个入口：AN7581 固件工作流勾选 `publish_feeds`
+> （整镜像那趟顺带发布），或独立跑 `publish-feed-repos.yml`（只编 app 并发布、不产镜像）。
+> **发布清单就是出厂的 `/etc/apk/repositories.d/customfeeds.list`**，指向本仓库 Pages，两个发布脚本
+> 逐条解析它、缺一条即硬失败，工作流里不再另写一份 feed 列表。
+> `pon_drivers`（那批 kmod）故意不在清单里：与本机内核 vermagic 强绑定，单包升级风险最高，驱动更新只能整镜像。
 > 设备上只 `apk add` 需要的单个包，不要跑 `apk upgrade -a`（官方源是每日 snapshot，全局升级
 > 会与固件编译那天的基线错配）。MT7981 平台用 opkg，上述 apk 源文件与 `publish_feeds` 均不适用。
 > 完整口径见 `AN7581` 分支 README 的「设备端软件源与 app 升级」。
@@ -151,11 +164,12 @@ AN7581 XGS-PON 编译目标的插件清单如下，NPU 固件包为 `airoha-en75
 | 文件 | 用途 |
 |---|---|
 | `an7581.config`（在 `AN7581` 分支根目录）、`ax3000t.config` / `rax3000m.config`（在 `MT7981` 分支根目录） | 按设备型号命名的 OpenWrt menuconfig 配置，master 不存放配置文件 — 定义目标设备、内核选项、软件包；`ax3000t.config` 面向 hanwckf 21.02 的 `mediatek/mt7981`，`rax3000m.config` 面向个人 fork `24.10.6` 的 `mediatek/filogic`，两份配置的 target 符号与软件包段互不通用；工作流复制成 `openwrt/.config` 并无条件追加 `CONFIG_CCACHE=y`（`dl/` 与 `.ccache` 两层缓存默认启用；三份固件编译工作流各带 `clean_dl_cache` / `clean_ccache` 两个清理开关，默认不勾）；缓存 key 的前缀取自工作流 env 的 `CONFIG_NAME`，三个值（`an7581` / `ax3000t` / `rax3000m`）两两不同，key 与恢复键都带 `-dl-` / `-ccache-` 段，同一分支上的多份工作流才不会恢复到彼此的缓存；改设备名要同步 `CONFIG_FILE`、`CONFIG_NAME` 和 key 里 `hashFiles` 的字面文件名（该参数不接受变量）；勾选清理开关时对应的 `Clear ... cache` 步骤排在同层 `Cache ...` 之前，删掉本设备前缀的条目后本趟全量下载/重编、收尾重存（一趟即恢复热度），并有删净断言，没删净直接失败；`rax3000m.config` 另显式关闭 7 个 `trusted-firmware-a-mt79xx-ram-*`（上游 `include/trusted-firmware-a.mk` 给了 `DEFAULT:=TARGET_mediatek_filogic`，勾 filogic 就默认全选，各自只往 BIN_DIR 丢一个 UART 救砖 `mt79xx-ram-*-bl2.bin`，关掉省 7 次 TFA 交叉编译；`*-spim-nand-ddr4` 等隐藏变体不能关，镜像构建要用它们的 staging 产物） |
-| `add-feed-sources.sh` | feeds 更新**前**执行的钩子脚本 — 增删第三方软件源（改 `feeds.conf.default`）。feed 名只能用字母、数字、下划线，带连字符会让 `feeds update` 报语法错误。AN7581 分支当前插入 `mosdns` feed（`sbwml/luci-app-mosdns`，固定提交）并追加 `lucky`（`gdy666/luci-app-lucky`）一条，均 `grep` 判重；**`mosdns` 必须用 `sed` 插到 `src-git packages` 之前而非追加** —— `immortalwrt/packages` 里也有 `net/mosdns`（5.3.3，缺 `stats_api` 等二十多个补丁），而 `scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed，行序反了会装成官方那份、LuCI 统计页拿不到数据，脚本插完立刻断言行序。MT7981 分支只追加 `lucky`。源码仓库只保留默认 feed，第三方 feed 一律在本脚本增删 |
-| `clone-packages.sh` | feeds 安装**后**、`make defconfig` **前**执行的钩子脚本 — clone 非 feed 格式的第三方包到 `package/<包名>/`。位置是硬约束：提前 clone 时 `+luci-base` 这类 feed 依赖解析不了，`make defconfig` 会静默跳过整包（编译不报错，见提交 `77684b6`）。AN7581 分支预置 `luci-app-airoha-npu`，MT7981 分支当前无预置包；两支的 `lucky` 均由 `add-feed-sources.sh` 追加的 feed 提供 |
+| `add-feed-sources.sh` | feeds 更新**前**执行的钩子脚本 — 往 `feeds.conf.default` 追加本项目的增量 feed。feed 名只能用字母、数字、下划线，带连字符会让 `feeds update` 报语法错误。AN7581 分支当前插入 `mosdns` feed（`sbwml/luci-app-mosdns`，固定提交）并追加 `lucky`（`gdy666/luci-app-lucky`，固定提交）与 `airoha_npu`（`DenzelVincent/luci-app-airoha-npu`，自维护故不锁提交），均 `grep` 判重；**`mosdns` 必须用 `sed` 插到 `src-git packages` 之前而非追加** —— `immortalwrt/packages` 里也有 `net/mosdns`（5.3.3，缺 `stats_api` 等二十多个补丁），而 `scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed，行序反了会装成官方那份、LuCI 统计页拿不到数据，脚本插完立刻断言行序。MT7981 分支只追加 `lucky`。源码仓库只保留默认 feed，增量 feed 一律在本脚本增删；也不写回源码仓库。原 `clone-packages.sh`（clone 非 feed 格式包到 `package/`）已于 2026-11-08 退役：clone 进去的包按 `include/package-dumpinfo.mk` 的 `Repository: $(if $(FEED),$(FEED),base)` 归进 base 仓库，无法单独发布或单独 `apk add`，唯一预置的 `luci-app-airoha-npu` 改造成 feed 形态（包在本仓库一层子目录）后迁到本脚本。**退役只落在 `AN7581` / master**：`MT7981` 分支仍保留 `clone-packages.sh`，两份工作流（`build-ax3000t-immortalwrt.yml` / `build-rax3000m-immortalwrt.yml`）照样在 feeds install 之后调它，只是当前预置为空、留给将来的非 feed 格式包，所以 `MT7981` 分支的表格里仍有独立一行 |
+| `build-feed-packages.sh` | `make defconfig` **后**、`make package/index` **前**执行的钩子脚本（仅 `publish-feed-repos.yml`） — 从出厂 `customfeeds.list` 取 feed 名，再到 `tmp/.packagedeps` 里取这些 feed 下被 `.config` 选中的包路径，拼成 `make package/<路径>/compile` 目标；不编内核、不组装镜像，但工具链与依赖省不掉。空集合、feed 目录不存在都硬失败 |
 | `set-firmware-defaults.sh` | `make defconfig` **后**、编译**前**执行的钩子脚本 — 用 `sed` 改源码树里会被装进 rootfs 的文件，即固件的出厂默认值（恢复出厂和 `sysupgrade -n` 后仍是这里的值）。AN758x 编译目标共用一份，改动对所有产出生效；MT7981 与 AN7581 两分支都把默认 LAN IP 改成 `10.0.0.1` |
+| `publish-feed-repos.sh` | 编译**完成后**、上传 Pages **前**执行的钩子脚本 — 逐条解析出厂 `files/etc/apk/repositories.d/customfeeds.list` 里的 `<arch>/<feed>`，把已签名的仓库拷成 `feed-site/`；清单里任何一条本次没产出就失败（Pages 整站替换）。索引与签名由构建系统的 `index` 目标用固件同一把私钥完成，本脚本只搬运，两个发布工作流共用 |
 | `feeds.conf.default` | （可选）覆盖默认 feeds 软件源 |
-| `files/` | （可选）预置文件目录，将文件覆盖到固件根文件系统 |
+| `files/` | （可选）预置文件目录，将文件覆盖到固件根文件系统；`files/etc/apk/repositories.d/customfeeds.list` 同时是设备端出厂源清单与 CI 发布清单（单一事实来源） |
 
 ## 编译指南参考
 
