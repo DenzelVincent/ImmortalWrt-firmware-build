@@ -89,11 +89,11 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 > 每个 `luci-app-*` 都配套 `luci-i18n-<app>-zh-cn`（含 `luci-i18n-base-zh-cn`），简体中文界面内置。
 > 主题带 `luci-theme-argon`，`luci-theme-bootstrap` 一并保留。
 >
-> `luci-app-lucky` 由 `add-feed-sources.sh` 追加的 `lucky` feed（锁 tag `v3.3.3`）提供，随 feeds 安装自动就位；
-> `luci-app-mosdns` 由同一脚本插入的 `mosdns` feed 提供，
+> `luci-app-lucky` 由 `add-feed-sources.sh` 追加的 `lucky` feed（pin `b07f65c…`，lucky 3.5.0-r1 / luci-app-lucky 3.0.0-r31）提供，随 feeds 安装自动就位；
+> `luci-app-mosdns` 由同一脚本插入的 `mosdns` feed 提供（pin `dbdd91a…` = tag `v5.3.4-r15`），
 > 其中 `mosdns` feed 有行序硬约束（必须排在 `src-git packages` 之前，理由见脚本注释）；
-> `luci-app-airoha-npu` 由同一脚本追加的 `airoha_npu` feed 提供（本仓库自维护，同样锁 tag `v1.2.1`，
-> 发版要走「bump 版本号 → 打 tag → 改这里的 pin」，理由见下面 `add-feed-sources.sh` 一节）。
+> `luci-app-airoha-npu` 由同一脚本追加的 `airoha_npu` feed 提供（本仓库自维护，pin `b24b50a…` = tag `v1.2.1`，
+> 发版要走「bump 版本号 → 打 tag → 把 tag 的 commit sha 写进 pin」，理由见下面 `add-feed-sources.sh` 一节）。
 > 顺序反了 kconfig 不报错，只会静默不打包该界面；本地编译同样要先跑 `add-feed-sources.sh` 再 `./scripts/feeds update -a`（见下面"本地编译"一节）。
 >
 > MosDNS 出厂是**关闭**状态（`/etc/config/mosdns` 里 `enabled '0'`、监听 `5335`），不会开机就占住 53 端口；
@@ -170,20 +170,21 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 
 feeds 更新**前**执行，改 `feeds.conf.default`。源码仓库（PonWrt）只保留默认 feed，第三方 feed 统一在这里增删：
 
-- 三条 feed 一律**锁 tag**（`^<tag>`）：不跟分支，也不在 CI 里动态取"最新 tag"——动态取等于回到 HEAD 漂移，
-  重跑一次工作流就可能换一份源码，已发布的仓库与本次镜像对不上。tag 和完整 commit 走的是 `scripts/feeds`
-  里同一条 `init_commit`（`git fetch --depth=1 origin '<ref>' && git checkout '<ref>'`），锁 tag 不比锁 commit 弱；
-  代价是 tag 能被 force-push 重指，所以升版只用新 tag 名、绝不复用旧名，且打 tag 前先推代码。
-  ref 里的连字符不受 feed 命名限制（那条限制只作用于 feed 名）。tag 名写错或忘了推，`feeds update -a`
-  该 feed 失败并让整个步骤退出非 0，不是静默丢包。本地换 tag 要先删 `feeds/<name>/`：带 `^ref` 的 feed
-  在 `scripts/feeds` 里是"给了 ref 就不 update"。
-- `mosdns` feed（`sbwml/luci-app-mosdns`，`v5.3.4-r15`）用 `sed` **插到 `src-git packages` 之前**，不是追加：
+- 三条 feed 一律**锁完整 commit sha**（`^<40位sha>`）：不锁 tag、不跟分支，也不在 CI 里动态取最新 tag（那等于回到 HEAD 漂移）。
+  tag 在这条链路上不可靠：`scripts/feeds` 的 `init_commit` 是 `clone --depth 1` → `fetch --depth=1 origin '<ref>'` → `checkout '<ref>'`，
+  末步按**名字**检出，而浅克隆只有在该 tag 正好指向被克隆的那个 commit 时才有 `refs/tags/<tag>`；非 tip 的 tag 一律
+  `pathspec ... did not match` 失败并让整个步骤退出非 0。完整 sha 按对象取、按对象检出，与 tip 位置无关。
+  脚本末尾断言三条 ref 都是 40 位十六进制，手写成 tag 名或短 sha 会先在这里拦住。
+  换 pin 后本地要先删 `feeds/<name>/`：带 `^ref` 的 feed 在 `scripts/feeds` 里是"给了 ref 就不 update"。
+- `mosdns` feed（`sbwml/luci-app-mosdns`，pin `dbdd91ab8ac8…` = tag `v5.3.4-r15`）用 `sed` **插到 `src-git packages` 之前**，不是追加：
   `immortalwrt/packages` 里也有一个 `net/mosdns`，而 `scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed。
   行序反了会装成官方那份，功能集与 `luci-app-mosdns` 自带的 `/etc/init.d/mosdns` 都不一致。脚本插完立刻断言行序
-- `lucky` feed（`gdy666/luci-app-lucky`，`v3.3.3`）追加到末尾，上游未打 tag 的提交按这里不参与
-- `airoha_npu` feed（`DenzelVincent/luci-app-airoha-npu`，`v1.2.1`）追加到末尾。自维护仓库同样锁 tag，
+- `lucky` feed（`gdy666/luci-app-lucky`，pin `b07f65c28bb5…`，lucky 3.5.0-r1 / luci-app-lucky 3.0.0-r31）追加到末尾。
+  作者的 `v3.3.0`~`v3.3.3` 四个标签全部指向同一个旧 commit（那份 Makefile 里还是 lucky 2.27.2），tag 名与包内容已脱钩，
+  所以这条只按 sha 锁内容，不追求对应某个 tag 名。
+- `airoha_npu` feed（`DenzelVincent/luci-app-airoha-npu`，pin `b24b50a1de1a…` = tag `v1.2.1`）追加到末尾。自维护仓库照常打 tag，
   要的是「镜像里预装的那份」与「Pages 发布的那份」必然同源。发版顺序：app 仓库提交 → 推 `main` → 打 tag →
-  改这里的 pin → 跑 `publish-feed-repos.yml`；打 tag 时必须同步 bump `PKG_VERSION` 或 `PKG_RELEASE`，
+  把该 tag 的 commit sha 写进这里的 pin → 跑 `publish-feed-repos.yml`；打 tag 时必须同步 bump `PKG_VERSION` 或 `PKG_RELEASE`，
   apk 只比版本号不比内容，版本号不动设备端 `apk add` 会判定"已满足"、不升级
 - 三条都用 `grep` 判重，重复执行不会写出第二条
 - 其余示例（`helloworld`、PassWall）保持注释状态
@@ -336,9 +337,9 @@ openssl ec -in private-key.pem -pubout -out public-key.pem
 自建 feed 源不再由固件编译工作流发布：固件那趟只管镜像，源的内容变化一律靠
 `publish-feed-repos.yml` 显式触发。
 
-`publish-feed-repos.yml` 本身就是发布动作，没有额外的发布开关；但 feed 锁的是 tag，所以「app 源码更新 →
-直接跑这一条」并不成立，顺序是 app 仓库 bump `PKG_VERSION`/`PKG_RELEASE` → 打新 tag → 推 → 改
-`add-feed-sources.sh` 的 pin 并提交 → 再跑这条工作流；只推代码不改 pin，发出去的仍是旧 tag 的内容。
+`publish-feed-repos.yml` 本身就是发布动作，没有额外的发布开关；但 feed 锁的是 commit sha，所以「app 源码更新 →
+直接跑这一条」并不成立，顺序是 app 仓库 bump `PKG_VERSION`/`PKG_RELEASE` → 打新 tag → 推 → 把该 tag 的
+commit sha 写进 `add-feed-sources.sh` 的 pin 并提交 → 再跑这条工作流；只推代码不改 pin，发出去的仍是旧 commit 的内容。
 **代价要说清楚**：它省掉的是内核与镜像组装，工具链和 `luci-base`、`lua`
 这类依赖省不掉，缓存命中也要几十分钟，不是几分钟量级。
 
@@ -377,8 +378,8 @@ cd ponwrt
 # 增删第三方 feed (mosdns / lucky / airoha_npu 都由编译仓库的 add-feed-sources.sh 统一处理，必须在 feeds update 之前执行)
 sh /path/to/ImmortalWrt-firmware-build/add-feed-sources.sh
 
-# 更新并安装 feeds（feed 锁的是 tag；改过 pin 要先 rm -rf feeds/<name>/，
-# 带 ^ref 的 feed 在 scripts/feeds 里是"给了 ref 就不 update"，不删就还是旧 tag 的内容）
+# 更新并安装 feeds（feed 锁的是 commit sha；改过 pin 要先 rm -rf feeds/<name>/，
+# 带 ^ref 的 feed 在 scripts/feeds 里是"给了 ref 就不 update"，不删就还是旧 commit 的内容）
 ./scripts/feeds update -a
 ./scripts/feeds install -a
 
