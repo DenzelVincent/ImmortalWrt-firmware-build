@@ -25,8 +25,8 @@
 | `build-ax3000t-immortalwrt.yml` | MT7981 / master | 编译小米 AX3000T 固件（源码 hanwckf `openwrt-21.02`；standard / stock / AN8855 变体按配置勾选） | 手动触发 (`workflow_dispatch`) |
 | `build-rax3000m-immortalwrt.yml` | MT7981 / master | 编译 CMCC RAX3000M 固件（源码个人 fork `24.10.6`，`mediatek/filogic` 子目标；同一 profile 也产出 eMMC 引导件，收集时排除，Release 只放 SPI-NAND 四件） | 手动触发 (`workflow_dispatch`) |
 | `build-mt7981-u-boot.yml` | MT7981 / master | 并行编译 MT7981 平台所有板型变体的 U-Boot 引导加载器 | 手动触发 (`workflow_dispatch`) |
-| `build-an7581-immortalwrt.yml` | AN7581 / master | 编译 AN7581 平台光猫固件 (XGS-PON)，源码分支 `REPO_BRANCH=master`；勾选 `publish_feeds` 时顺带把自建 feed 仓库发布到本仓库 Pages | 手动触发 (`workflow_dispatch`) |
-| `publish-feed-repos.yml` | AN7581 / master | 只编 AN7581 发布集里的 app 包并签名发布到 Pages，不产固件镜像；用于 app 打过新 tag、`add-feed-sources.sh` 的 pin 已跟上之后的单独发版 | 手动触发 (`workflow_dispatch`) |
+| `build-an7581-immortalwrt.yml` | AN7581 / master | 编译 AN7581 平台光猫固件 (XGS-PON)，源码分支 `REPO_BRANCH=master`；只产镜像，不发布自建 feed 源 | 手动触发 (`workflow_dispatch`) |
+| `publish-feed-repos.yml` | AN7581 / master | 自建 feed 源的唯一发布入口：只编 AN7581 发布集里的 app 包并签名发布到 Pages，不产固件镜像；用于 app 打过新 tag、`add-feed-sources.sh` 的 pin 已跟上之后的单独发版 | 手动触发 (`workflow_dispatch`) |
 
 > `REPO_URL` / `REPO_BRANCH` 写死在各工作流的 `env` 段（AN758x 指向 PonWrt 源码仓库的分支，
 > RAX3000M 指向个人 fork `DenzelVincent/immortalwrt` 的 `24.10.6` 分支），不由本仓库分支名推导；
@@ -110,14 +110,14 @@ AN7581 XGS-PON 编译目标的插件清单如下，NPU 固件包为 `airoha-en75
 > **AN7581 上这些预装 app 后续怎么升级**：官方下载站不托管本项目 feed，`an7581.config` 把它们的
 > `CONFIG_FEED_*` 置 `m`，设备默认源列表 `distfeeds.list` 因此只留官方地址（`=m` 只影响源列表，
 > 不影响包是否编译预装进固件）。发布到 Pages 的是 `pon_userspace` / `lucky` / `mosdns` / `airoha_npu`
-> 四个 feed，仓库由 make 用固件同一把私钥签名生成，两个入口：AN7581 固件工作流勾选 `publish_feeds`
-> （整镜像那趟顺带发布），或独立跑 `publish-feed-repos.yml`（只编 app 并发布、不产镜像；feed 锁 tag，
-> 所以要先走完上面那串「bump 版本号 → 打 tag → 改 pin」）。
-> **发布清单就是出厂的 `/etc/apk/repositories.d/customfeeds.list`**，指向本仓库 Pages，两个发布脚本
+> 四个 feed，仓库由 make 用固件同一把私钥签名生成，发布只有一条路径：`publish-feed-repos.yml`
+> （只编 app 并发布、不产镜像；feed 锁 tag，所以要先走完上面那串「bump 版本号 → 打 tag → 改 pin」）。
+> 固件编译工作流不再顺带发布，它仍还原同一把私钥，为的是镜像里的公钥认这个源。
+> **发布清单就是出厂的 `/etc/apk/repositories.d/customfeeds.list`**，指向本仓库 Pages，发布脚本
 > 逐条解析它、缺一条即硬失败，工作流里不另写一份 feed 列表。
 > `pon_drivers`（那批 kmod）故意不在清单里：与本机内核 vermagic 强绑定，单包升级风险最高，驱动更新只能整镜像。
 > 设备上只 `apk add` 需要的单个包，不要跑 `apk upgrade -a`（官方源是每日 snapshot，全局升级
-> 会与固件编译那天的基线错配）。MT7981 平台用 opkg，上述 apk 源文件与 `publish_feeds` 均不适用。
+> 会与固件编译那天的基线错配）。MT7981 平台用 opkg，上述 apk 源文件与 feed 发布工作流均不适用。
 > 完整口径见 `AN7581` 分支 README 的「设备端软件源与 app 升级」。
 
 ## 支持的设备
@@ -168,7 +168,7 @@ AN7581 XGS-PON 编译目标的插件清单如下，NPU 固件包为 `airoha-en75
 | `add-feed-sources.sh` | feeds 更新**前**执行的钩子脚本 — 往 `feeds.conf.default` 追加本项目的增量 feed。feed 名只能用字母、数字、下划线，带连字符会让 `feeds update` 报语法错误。AN7581 分支当前插入 `mosdns` feed（`sbwml/luci-app-mosdns`，锁 tag `v5.3.4-r15`）并追加 `lucky`（`gdy666/luci-app-lucky`，`v3.3.3`）与 `airoha_npu`（`DenzelVincent/luci-app-airoha-npu`，`v1.2.1`），均 `grep` 判重；MT7981 分支只追加 `lucky`（同样锁 `v3.3.3`）。三条一律锁 tag：不跟分支，也不在 CI 里动态取最新 tag（那等于回到 HEAD 漂移）；升版只用新 tag 名、不复用旧名（tag 可被 force-push 重指），tag 名写错或忘了推会让 `feeds update -a` 退出非 0 而不是静默丢包；本地换 tag 要先删 `feeds/<name>/`（带 `^ref` 的 feed 在 `scripts/feeds` 里是"给了 ref 就不 update"）；连字符限制只约束 feed 名，`^<ref>` 段里的 `-` 不受影响。**`mosdns` 必须用 `sed` 插到 `src-git packages` 之前而非追加** —— `immortalwrt/packages` 里也有 `net/mosdns`，而 `scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed，行序反了会装成官方那份，脚本插完立刻断言行序。源码仓库只保留默认 feed，增量 feed 一律在本脚本增删；也不写回源码仓库。 |
 | `build-feed-packages.sh` | `make defconfig` **后**、`make package/index` **前**执行的钩子脚本（仅 `publish-feed-repos.yml`） — 从出厂 `customfeeds.list` 取 feed 名，再到 `tmp/.packagedeps` 里取这些 feed 下被 `.config` 选中的包路径，拼成 `make package/<路径>/compile` 目标；不编内核、不组装镜像，但工具链与依赖省不掉。空集合、feed 目录不存在都硬失败 |
 | `set-firmware-defaults.sh` | `make defconfig` **后**、编译**前**执行的钩子脚本 — 用 `sed` 改源码树里会被装进 rootfs 的文件，即固件的出厂默认值（恢复出厂和 `sysupgrade -n` 后仍是这里的值）。AN758x 编译目标共用一份，改动对所有产出生效；MT7981 与 AN7581 两分支都把默认 LAN IP 改成 `10.0.0.1` |
-| `publish-feed-repos.sh` | 编译**完成后**、上传 Pages **前**执行的钩子脚本 — 逐条解析出厂 `files/etc/apk/repositories.d/customfeeds.list` 里的 `<arch>/<feed>`，把已签名的仓库拷成 `feed-site/`；清单里任何一条本次没产出就失败（Pages 整站替换）。索引与签名由构建系统的 `index` 目标用固件同一把私钥完成，本脚本只搬运，两个发布工作流共用 |
+| `publish-feed-repos.sh` | 编译**完成后**、上传 Pages **前**执行的钩子脚本 — 逐条解析出厂 `files/etc/apk/repositories.d/customfeeds.list` 里的 `<arch>/<feed>`，把已签名的仓库拷成 `feed-site/`；清单里任何一条本次没产出就失败（Pages 整站替换）。索引与签名由构建系统的 `index` 目标用固件同一把私钥完成，本脚本只搬运，由 `publish-feed-repos.yml` 调用 |
 | `feeds.conf.default` | （可选）覆盖默认 feeds 软件源 |
 | `files/` | （可选）预置文件目录，将文件覆盖到固件根文件系统；`files/etc/apk/repositories.d/customfeeds.list` 同时是设备端出厂源清单与 CI 发布清单（单一事实来源） |
 
