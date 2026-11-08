@@ -329,8 +329,10 @@ apk add luci-app-lucky                              # 只列出该包及其缺�
 - `publish_feeds` — 整镜像那趟顺带把各 feed 的 apk 仓库发布到本仓库 Pages，默认关闭。
   首次勾选前要在 仓库 Settings → Pages 把 Source 设为 **GitHub Actions**；没设好就失败，不静默跳过。
 
-`publish-feed-repos.yml` 本身就是发布动作，没有额外的发布开关；app 源码更新后想直接给设备端
-`apk add`，跑这一条即可。**代价要说清楚**：它省掉的是内核与镜像组装，工具链和 `luci-base`、`lua`
+`publish-feed-repos.yml` 本身就是发布动作，没有额外的发布开关；但 feed 锁的是 tag，所以「app 源码更新 →
+直接跑这一条」并不成立，顺序是 app 仓库 bump `PKG_VERSION`/`PKG_RELEASE` → 打新 tag → 推 → 改
+`add-feed-sources.sh` 的 pin 并提交 → 再跑这条工作流；只推代码不改 pin，发出去的仍是旧 tag 的内容。
+**代价要说清楚**：它省掉的是内核与镜像组装，工具链和 `luci-base`、`lua`
 这类依赖省不掉，缓存命中也要几十分钟，不是几分钟量级。
 
 两层缓存默认都是启用的：`Cache ...` 步骤没有 if，恒定恢复 + 收尾保存，`CONFIG_CCACHE=y` 由
@@ -368,7 +370,8 @@ cd ponwrt
 # 增删第三方 feed (mosdns / lucky / airoha_npu 都由编译仓库的 add-feed-sources.sh 统一处理，必须在 feeds update 之前执行)
 sh /path/to/ImmortalWrt-firmware-build/add-feed-sources.sh
 
-# 更新并安装 feeds
+# 更新并安装 feeds（feed 锁的是 tag；改过 pin 要先 rm -rf feeds/<name>/，
+# 带 ^ref 的 feed 在 scripts/feeds 里是"给了 ref 就不 update"，不删就还是旧 tag 的内容）
 ./scripts/feeds update -a
 ./scripts/feeds install -a
 
