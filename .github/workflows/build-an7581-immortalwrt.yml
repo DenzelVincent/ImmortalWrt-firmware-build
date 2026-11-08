@@ -50,18 +50,18 @@ env:
   # 目标设备和子目标（编译产物路径使用）
   DEVICE_NAME: XG-040G-MD
   SUBTARGET: an7581
-  # 四个自定义脚本 = 流程里的四个插入点，执行阶段见各行注释
-  # 1) ./scripts/feeds update -a 之前 —— 增删第三方 feed 源（当前插入 mosdns，追加 lucky）
+  # 本工作流的三个自定义脚本 = 流程里的三个插入点，执行阶段见各行注释
+  # （发布工作流 publish-feed-repos.yml 复用 add-feed-sources.sh 与 publish-feed-repos.sh，
+  #   中间换 build-feed-packages.sh 只编发布集选中的包、不编镜像）
+  # 1) ./scripts/feeds update -a 之前 —— 增删增量 feed 源（mosdns / lucky / airoha_npu）
   SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
-  # 2) ./scripts/feeds install -a 之后、make defconfig 之前 —— clone 非 feed 格式的第三方包（lucky / mosdns 由 add-feed-sources.sh 处理，此处仅 npu）
-  SCRIPT_CLONE_PACKAGES: clone-packages.sh
-  # 3) make defconfig 之后 —— 改固件出厂默认值 (默认 IP、DHCP 等)
+  # 2) make defconfig 之后 —— 改固件出厂默认值 (默认 IP、DHCP 等)
   SCRIPT_SET_FIRMWARE_DEFAULTS: set-firmware-defaults.sh
-  # 4) 编译完成之后、上传 Pages 之前 —— 把各 feed 的签名仓库拷成站点目录并与出厂源对账
+  # 3) 编译完成之后、上传 Pages 之前 —— 把各 feed 的签名仓库拷成站点目录并与出厂源对账
   SCRIPT_PUBLISH_FEED_REPOS: publish-feed-repos.sh
-  # 发布到 Pages 自建源的 feed（须与 files/etc/apk/repositories.d/customfeeds.list 里的条目一致，
-  # 不一致会在对账步骤里失败；架构目录由脚本从 bin/packages/ 反查，不写死在这里）
-  PUBLISH_FEEDS: pon_drivers pon_userspace lucky mosdns
+  # 发布集（哪些 feed 上 Pages）不写在上面这些 env 里：唯一事实来源是
+  # files/etc/apk/repositories.d/customfeeds.list，两个发布脚本都逐条解析它，
+  # 清单在本次产物里缺任何一条就直接失败，省掉"工作流一份列表、清单一份列表"的漂移。
   # 编译环境时区
   TZ: Asia/Shanghai
   # 可选覆盖：本仓库根目录存在该文件时才 mv 覆盖源码自带 feeds，当前不存在
@@ -217,16 +217,8 @@ jobs:
       run: cd openwrt && ./scripts/feeds install -a
 
     # ----------------------------------------------------------
-    # 步骤 8.5: 执行 clone-packages.sh 克隆非 feed 格式的第三方包（lucky / mosdns 已由 add-feed-sources.sh 增删的 feed 提供，此处仅 airoha-npu；须在 feeds install 之后）
-    # ----------------------------------------------------------
-    - name: Clone custom packages
-      run: |
-        chmod +x $SCRIPT_CLONE_PACKAGES
-        cd openwrt
-        $GITHUB_WORKSPACE/$SCRIPT_CLONE_PACKAGES
-
-    # ----------------------------------------------------------
-    # 步骤 9: 加载 APK 仓库签名密钥（Secret: PONWRT_APK_PRIVATE_KEY，未配置则跳过）
+    # 步骤 9: 加载 APK 仓库签名密钥（Secret: PONWRT_APK_PRIVATE_KEY）
+    # 不勾选 publish_feeds 时缺 Secret 只跳过；勾选了就必须失败——见下面的断言
     # ----------------------------------------------------------
     - name: Load repository signing key
       working-directory: openwrt
@@ -237,6 +229,11 @@ jobs:
           umask 077
           printf '%s\n' "$PONWRT_APK_PRIVATE_KEY" > private-key.pem
           openssl ec -in private-key.pem -pubout -out public-key.pem
+        elif [ '${{ inputs.publish_feeds }}' = 'true' ]; then
+          # package/Makefile:77 有兜底规则：私钥不存在时 make 会 openssl ecparam -genkey 现造一把，
+          # 索引照签、编译照成功，但固件 /etc/apk/keys/ 里的公钥不认它，设备端 apk add 全部报 unspec。
+          echo "::error::勾选了 publish_feeds 但未配置 Secret PONWRT_APK_PRIVATE_KEY，仓库会用随机密钥签名、设备端不认；请配置 Secret 或取消勾选"
+          exit 1
         fi
 
     # ----------------------------------------------------------

@@ -1,11 +1,14 @@
 #!/bin/sh
 # 阶段: ./scripts/feeds update -a 之前 (工作流步骤 "Load custom feeds", cwd = openwrt/)
-# 用途: 往 feeds.conf.default 追加或放开第三方 feed 源; mosdns 是例外, 必须插到 packages 之前, 见该段注释
+# 用途: 往 feeds.conf.default 追加本项目需要的增量 feed 源（lucky / mosdns / airoha_npu）
+# 口径: 增量包一律做成 feed 声明，不 clone 进 package/ —— clone 进去的包按 include/package-dumpinfo.mk
+#       的 `Repository: $(if $(FEED),$(FEED),base)` 归进 base 仓库，跟源码树自带包混在一起，
+#       没法单独发布；声明成 feed 才落进 bin/packages/<arch>/<feed>/，可单独发 Pages、可单独 apk add。
+#       声明也不能挪走：scripts/feeds 只读 feeds.conf / feeds.conf.default 这两个文件，
+#       少一条 src-git 就是 feeds install -a 不装、make defconfig 静默丢包（见提交 77684b6）。
 # 约束: feed 名只能用字母数字下划线 —— scripts/feeds 的解析正则里名字捕获组是 (\w+)、
 #       不含连字符, 带 `-` 会在 feeds update 时报 "Syntax error in feeds.conf.default"
 #       (2026-10-10 的 CI 失败即此因, 不是仓库格式问题)。
-# 不在这里 clone 包: 非 feed 格式的第三方包必须等 feeds install 之后才 clone,
-#       否则依赖解析不到、包会被 make defconfig 静默跳过, 见 clone-packages.sh。
 
 # Uncomment a feed source
 # sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default
@@ -38,7 +41,13 @@ fi
 # Lucky 大吉 (lucky 核心 + LuCI 界面：IPv6 端口转发 / DDNS / 反向代理)
 # 仓库根下是 lucky/ 与 luci-app-lucky/ 两个包目录，可直接作为 feed 扫描；
 # 固定提交避免上游改动影响编译。feed 名 lucky 不含连字符，符合上面的命名约束。
-# 源码仓库的 feeds.conf.default 只保留默认 feed，第三方 feed 统一在这里追加；
-# grep 判重保证重复执行不会写入第二条。
 grep -q '^src-git lucky ' feeds.conf.default || \
   echo 'src-git lucky https://github.com/gdy666/luci-app-lucky.git^9449a5250c61f1aa8f16b2d8e04a9da25c26e735' >>feeds.conf.default
+
+# Airoha NPU 管理界面 (自维护) —— 与 pon_drivers / pon_userspace 同类，不锁 commit，随 main 走。
+# lucky / mosdns 是第三方仓库才锁 ^<commit>；自己维护的仓库锁了就没法"源码更新 → 发布更新"。
+# 仓库形态前提：包本体在仓库里一层同名子目录 luci-app-airoha-npu/ 下（2026-11-08 改的）。
+# 根上直接放 Makefile 的仓库当 feed 用，会被 include/scan.mk 的 find -mindepth 1 跳过根目录，
+# 结果是 feeds update 报成功、扫出 0 个包、install -a 什么都不装，defconfig 静默丢界面。
+grep -q '^src-git airoha_npu ' feeds.conf.default || \
+  echo 'src-git airoha_npu https://github.com/DenzelVincent/luci-app-airoha-npu.git' >>feeds.conf.default
