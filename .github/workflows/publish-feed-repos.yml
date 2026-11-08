@@ -184,9 +184,11 @@ jobs:
           exit 1
         }
         umask 077
-        printf '%s\n' "$PONWRT_APK_PRIVATE_KEY" > private-key.pem
-        openssl ec -in private-key.pem -pubout -out public-key.pem
+        # 行尾归一化：Windows 侧粘贴的 PEM 常带 CRLF，openssl 能容忍，但 mkndx --sign 读的就是这个文件
+        printf '%s\n' "$PONWRT_APK_PRIVATE_KEY" | tr -d '\r' > private-key.pem
+        # 私钥自洽校验：截断或粘成一行会在这里红，-pubout 只推导不查一致性
         openssl ec -in private-key.pem -noout -check >/dev/null
+        openssl ec -in private-key.pem -pubout -out public-key.pem
 
     # ----------------------------------------------------------
     # 步骤 10: 设备配置复制成 openwrt/.config 并生成完整配置（不产镜像，不跑出厂默认值脚本）

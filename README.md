@@ -112,7 +112,9 @@ AN7581 XGS-PON 编译目标的插件清单如下，NPU 固件包为 `airoha-en75
 > 不影响包是否编译预装进固件）。发布到 Pages 的是 `pon_userspace` / `lucky` / `mosdns` / `airoha_npu`
 > 四个 feed，仓库由 make 用固件同一把私钥签名生成，发布只有一条路径：`publish-feed-repos.yml`
 > （只编 app 并发布、不产镜像；feed 锁 tag，所以要先走完上面那串「bump 版本号 → 打 tag → 改 pin」）。
-> 固件编译工作流不再顺带发布，它仍还原同一把私钥，为的是镜像里的公钥认这个源。
+> 固件编译工作流不再顺带发布，它仍还原同一把私钥，为的是镜像里的公钥认这个源。这把私钥就是本仓库的
+> Actions Secret `PONWRT_APK_PRIVATE_KEY`；生成命令与「建 Secret → 编固件 → 刷机 → 发源」的固定顺序，
+> 见 `AN7581` 分支 README 的「签名密钥」一节。
 > **发布清单就是出厂的 `/etc/apk/repositories.d/customfeeds.list`**，指向本仓库 Pages，发布脚本
 > 逐条解析它、缺一条即硬失败，工作流里不另写一份 feed 列表。
 > `pon_drivers`（那批 kmod）故意不在清单里：与本机内核 vermagic 强绑定，单包升级风险最高，驱动更新只能整镜像。
