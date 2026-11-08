@@ -4,9 +4,6 @@
 
 本仓库用 GitHub Actions 云编译 Airoha AN758x 平台的光猫固件。本分支当前只有一个编译目标（AN7581 XGS-PON），一份工作流和一份设备配置文件。
 
-> 2026-11-08 起移除 GPON 编译目标：真机定案本机 BOSA（XG0210/EN7572AN）为 XG-PON 专用，GPON 确认不可用；
-> PonWrt 源码仓库的 `AN7581-GPON` 分支与本仓库的 GPON 工作流、设备配置已一并删除。
-
 ## 免责声明
 
 ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
@@ -180,24 +177,20 @@ feeds 更新**前**执行，改 `feeds.conf.default`。源码仓库（PonWrt）�
   ref 里的连字符不受 feed 命名限制（那条限制只作用于 feed 名）。tag 名写错或忘了推，`feeds update -a`
   该 feed 失败并让整个步骤退出非 0，不是静默丢包。本地换 tag 要先删 `feeds/<name>/`：带 `^ref` 的 feed
   在 `scripts/feeds` 里是"给了 ref 就不 update"。
-- `mosdns` feed（`sbwml/luci-app-mosdns`，`v5.3.4-r15`，即原锁的 commit `dbdd91a`）用 `sed` **插到 `src-git packages` 之前**，不是追加：
-  `immortalwrt/packages` 里也有一个 `net/mosdns`（5.3.3），而 `scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed。
-  行序反了会装成官方那份 —— 缺 `stats_api` / query log / `adblock_set` 等二十多个补丁，LuCI 统计页拿不到数据，
-  还会和 `luci-app-mosdns` 自带的 `/etc/init.d/mosdns` 撞文件。脚本插完立刻断言行序
-- `lucky` feed（`gdy666/luci-app-lucky`，`v3.3.3`，annotated tag，peel 出来就是原锁的 commit `9449a52`）追加到末尾。
-  上游 `main` 上还有 5 个未打 tag 的提交（含 2026-10-29「update v3.5.0 core」），按 tag 锁就是先不要这批改动，等上游打 tag 再升
+- `mosdns` feed（`sbwml/luci-app-mosdns`，`v5.3.4-r15`）用 `sed` **插到 `src-git packages` 之前**，不是追加：
+  `immortalwrt/packages` 里也有一个 `net/mosdns`，而 `scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed。
+  行序反了会装成官方那份，功能集与 `luci-app-mosdns` 自带的 `/etc/init.d/mosdns` 都不一致。脚本插完立刻断言行序
+- `lucky` feed（`gdy666/luci-app-lucky`，`v3.3.3`）追加到末尾，上游未打 tag 的提交按这里不参与
 - `airoha_npu` feed（`DenzelVincent/luci-app-airoha-npu`，`v1.2.1`）追加到末尾。自维护仓库同样锁 tag，
   要的是「镜像里预装的那份」与「Pages 发布的那份」必然同源。发版顺序：app 仓库提交 → 推 `main` → 打 tag →
   改这里的 pin → 跑 `publish-feed-repos.yml`；打 tag 时必须同步 bump `PKG_VERSION` 或 `PKG_RELEASE`，
   apk 只比版本号不比内容，版本号不动设备端 `apk add` 会判定"已满足"、不升级
 - 三条都用 `grep` 判重，重复执行不会写出第二条
-- 其余示例（`helloworld`、PassWall、kenzok8）保持注释状态
+- 其余示例（`helloworld`、PassWall）保持注释状态
 - feed 名只能用字母数字下划线，带连字符会让 `feeds update` 报 `Syntax error in feeds.conf.default`
 - 当 feed 用的仓库必须是 **feed 形态**：包本体放在仓库里一层子目录（如 `luci-app-airoha-npu/`），
   不能直接摊在仓库根。`include/scan.mk` 用 `find -mindepth 1` 扫包，会跳过根目录那份 Makefile，
   结果是 `feeds update` 报成功、扫出 0 个包、`install -a` 什么都不装，`make defconfig` 静默丢界面。
-  （2026-11-08 把 `luci-app-airoha-npu` 仓库改成这层子目录形态，原来 clone 到 `package/` 的
-  `clone-packages.sh` 一并退役。）
 
 ### `set-firmware-defaults.sh`
 
@@ -338,8 +331,8 @@ apk add luci-app-lucky                              # 只列出该包及其缺�
 两层缓存默认都是启用的：`Cache ...` 步骤没有 if，恒定恢复 + 收尾保存，`CONFIG_CCACHE=y` 由
 `Load custom config` 步骤无条件写进 `.config`。勾选清理开关时，对应的 `Clear ... cache` 步骤排在
 同层 `Cache ...` 步骤**之前**，先删掉本设备前缀的条目，本趟恢复必然落空 → 全量下载/重编 →
-收尾把新条目存回去，一趟冷编译就把缓存重新灌满（旧写法"关掉开关"要付两趟才恢复热度）。
-没勾选时行为与改造前的"开关为 true"完全一致。删完有断言检查同前缀残留，没删净就直接失败，
+收尾把新条目存回去，一趟冷编译就把缓存重新灌满；没勾选时恒定走缓存。
+删完有断言检查同前缀残留，没删净就直接失败，
 而不是静默用旧缓存；也可以直接去 仓库 Settings → Actions → Caches 手动删除。
 
 定时编译：编辑对应 workflow 文件取消 `schedule` 注释 (UTC 时间)。

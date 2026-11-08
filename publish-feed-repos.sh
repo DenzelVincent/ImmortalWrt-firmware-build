@@ -1,17 +1,9 @@
 #!/bin/sh
 # 阶段: 编译完成后、上传 Pages 之前 (工作流步骤 "Stage feed repositories", cwd = 本仓库根目录)
-# 用途: 把各自定义 feed 已生成好的仓库 (packages.adb + *.apk) 拷成 Pages 站点目录。
-# 事实来源: files/etc/apk/repositories.d/customfeeds.list —— 出厂源清单就是发布清单。
-#       逐条解析 URL 里的 <arch> <feed>，两列都从清单来，不在工作流里另写一份 feed 列表，
-#       省掉两处漂移；任何一条在本次编译产物里没有 packages.adb 就直接失败，
-#       因为 Pages 部署是整站替换，缺一条就等于设备端那条 URL 变 404。
-# 背景: 官方下载站不托管本项目 feed —— an7581.config 里已把 CONFIG_FEED_* 置 m
-#       (只让默认源列表少掉死链, 不影响包编进固件)。设备端要能 apk add 这些 app, 源只能自己发。
-# 签名: 索引与签名由构建系统的 index 目标完成 (apk mkndx --sign private-key.pem)，
-#       私钥就是工作流 "Load repository signing key" 还原的那对, 固件 /etc/apk/keys/ 里是配套公钥,
-#       所以本脚本只搬运、不重签, 设备装包也不需要 --allow-untrusted。
-# 口径: 设备端只 apk add 单个包, 不跑 apk upgrade -a —— 官方源是每日 snapshot,
-#       全局升级会把依赖拉到与本固件编译那天不一致的版本。kmod 类不在此列，见清单注释。
+# 用途: 把各自定义 feed 已生成好的仓库 (packages.adb + *.apk) 拷成 Pages 站点目录，只搬运不重签
+# 事实来源: files/etc/apk/repositories.d/customfeeds.list —— 出厂源清单就是发布清单，不在工作流里另写一份
+#       Pages 部署是整站替换，清单里任何一条本次没有 packages.adb 就直接失败，否则设备端那条 URL 变 404
+# 签名: 索引与签名由 make package/index 完成 (apk mkndx --sign private-key.pem)，公钥已在固件 /etc/apk/keys/ 里
 # 用法: sh publish-feed-repos.sh [源码目录]    默认 openwrt; 输出目录固定 feed-site/
 
 set -e
@@ -21,8 +13,7 @@ pkgs="$src_root/bin/packages"
 site="feed-site"
 list="files/etc/apk/repositories.d/customfeeds.list"
 
-# 固件编译工作流的 "Load custom config" 步骤会把整个 files/ mv 进源码目录当出厂 overlay，
-# 那时清单已经不在仓库根了；两处都找一遍，别把发布步骤绑在 mv 之前。
+# 固件工作流的 "Load custom config" 会把整个 files/ mv 进源码目录当出厂 overlay，两处都找一遍
 if [ ! -f "$list" ] && [ -f "$src_root/$list" ]; then
   list="$src_root/$list"
 fi
