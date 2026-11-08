@@ -273,6 +273,21 @@ apk add luci-app-lucky                              # 只列出该包及其缺�
 
 ## 云编译
 
+### 签名密钥
+
+自建 feed 源用 ECDSA P-256 签名，密钥一次生成、长期复用，存在本仓库 Actions Secret `PONWRT_APK_PRIVATE_KEY` 里（值 = 私钥 PEM 全文，含 `-----BEGIN/END-----` 两行）。构建系统只在私钥文件缺失时当场随机造一把，CI 容器一销毁就没了，所以这把钥匙只能你自己保存。工作流写 `private-key.pem` 前统一 `tr -d '\r'`（Windows 侧的 CRLF 一并归一化），再用 `-check` 做自洽校验——截断或粘成一行会在这一步直接红。
+
+在 Linux 侧生成（WSL 或编译容器里执行）：
+
+```sh
+umask 077
+openssl ecparam -name prime256v1 -genkey -noout -out private-key.pem
+openssl ec -in private-key.pem -noout -check
+openssl ec -in private-key.pem -pubout -out public-key.pem
+```
+
+公钥由 `base-files` 打进镜像 `/etc/apk/keys/`，因此顺序固定为：建 Secret → 编固件 → 刷机 → 发布自建源。换密钥等于让手上所有已刷镜像都不再信任 Pages 上的仓库，只能重刷；私钥备份到仓库之外，任何仓库都不要提交。
+
 ### 编译流程
 
 `build-an7581-immortalwrt.yml`（固件镜像）：
@@ -284,7 +299,7 @@ apk add luci-app-lucky                              # 只列出该包及其缺�
 5. 缓存 `dl/` 下载目录与 `openwrt/.ccache`（默认启用；key = 工作流 env 里的 `CONFIG_NAME` + `-dl-`/`-ccache-` + 配置内容哈希；`CONFIG_NAME` 与 `CONFIG_FILE` 成对定义，清理开关见下方"触发方式"）
 6. 加载 feeds 源（本仓库不带 `feeds.conf.default`，用源码分支自带的那份），执行 `add-feed-sources.sh`
 7. 更新并安装 feeds
-8. 还原 APK 仓库签名私钥（Secret `PONWRT_APK_PRIVATE_KEY` 必填，缺失直接失败：镜像 `/etc/apk/keys/` 里的公钥必须认自建源的签名）
+8. 还原 APK 仓库签名私钥（Secret `PONWRT_APK_PRIVATE_KEY` 必填，缺失或格式非法直接失败：镜像 `/etc/apk/keys/` 里的公钥必须认自建源的签名，生成方式见上方"签名密钥"）
 9. 将工作流 `CONFIG_FILE` 指向的那份配置复制为 `openwrt/.config`，无条件追加 `CONFIG_CCACHE=y` → `make defconfig` 展开（展开后自检这一行还在）
 10. 执行 `set-firmware-defaults.sh` 修改固件出厂默认参数
 11. 预下载软件包源码 (`make download`)
