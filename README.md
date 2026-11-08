@@ -88,11 +88,11 @@ AN7581 XGS-PON 编译目标的插件清单如下，NPU 固件包为 `airoha-en75
 | `luci-app-upnp` | UPnP 自动端口映射 |
 | `luci-theme-argon` | Argon 主题（`luci-theme-bootstrap` 一并保留） |
 
-> 上表中 `luci-app-lucky` 由 `add-feed-sources.sh` 追加的 `lucky` feed（锁 tag `v3.3.3`）提供，
-> `luci-app-mosdns` 由同一脚本插入的 `mosdns` feed（锁 tag `v5.3.4-r15`）提供，`luci-app-airoha-npu` 由同一脚本追加的
-> `airoha_npu` feed（本仓库自维护，同样锁 tag `v1.2.1`）提供，随 feeds 安装就位；其余来自源码分支自带的 feeds。
-> 三条 feed 一律锁 tag、不跟分支，也不在 CI 里动态取最新 tag（那等于回到 HEAD 漂移）；自维护仓库的发版顺序是
-> 「app 仓库 bump `PKG_VERSION`/`PKG_RELEASE` → 打 tag → 推 → 改这里的 pin → 跑发布工作流」，
+> 上表中 `luci-app-lucky` 由 `add-feed-sources.sh` 追加的 `lucky` feed（pin `b07f65c…`）提供，
+> `luci-app-mosdns` 由同一脚本插入的 `mosdns` feed（pin `dbdd91a…` = tag `v5.3.4-r15`）提供，`luci-app-airoha-npu` 由同一脚本追加的
+> `airoha_npu` feed（本仓库自维护，pin `b24b50a…` = tag `v1.2.1`）提供，随 feeds 安装就位；其余来自源码分支自带的 feeds。
+> 三条 feed 一律锁完整 commit sha：不锁 tag、不跟分支，也不在 CI 里动态取最新 tag（那等于回到 HEAD 漂移）；自维护仓库的发版顺序是
+> 「app 仓库 bump `PKG_VERSION`/`PKG_RELEASE` → 打 tag → 推 → 把该 tag 的 commit sha 写进这里的 pin → 跑发布工作流」，
 > 版本号不 bump 的话 apk 只比版本不比内容，设备端 `apk add` 会判定"已满足"、不升级。
 > 源码仓库的 `feeds.conf.default` 不写入增量 feed。
 > 增量包一律做成 feed 声明、不 clone 进 `package/`：clone 进去的包按 `include/package-dumpinfo.mk`
@@ -111,7 +111,7 @@ AN7581 XGS-PON 编译目标的插件清单如下，NPU 固件包为 `airoha-en75
 > `CONFIG_FEED_*` 置 `m`，设备默认源列表 `distfeeds.list` 因此只留官方地址（`=m` 只影响源列表，
 > 不影响包是否编译预装进固件）。发布到 Pages 的是 `pon_userspace` / `lucky` / `mosdns` / `airoha_npu`
 > 四个 feed，仓库由 make 用固件同一把私钥签名生成，发布只有一条路径：`publish-feed-repos.yml`
-> （只编 app 并发布、不产镜像；feed 锁 tag，所以要先走完上面那串「bump 版本号 → 打 tag → 改 pin」）。
+> （只编 app 并发布、不产镜像；feed 锁 commit sha，所以要先走完上面那串「bump 版本号 → 打 tag → 把 sha 写进 pin」）。
 > 固件编译工作流不再顺带发布，它仍还原同一把私钥，为的是镜像里的公钥认这个源。这把私钥就是本仓库的
 > Actions Secret `PONWRT_APK_PRIVATE_KEY`；生成命令与「建 Secret → 编固件 → 刷机 → 发源」的固定顺序，
 > 见 `AN7581` 分支 README 的「签名密钥」一节。
@@ -167,7 +167,7 @@ AN7581 XGS-PON 编译目标的插件清单如下，NPU 固件包为 `airoha-en75
 | 文件 | 用途 |
 |---|---|
 | `an7581.config`（在 `AN7581` 分支根目录）、`ax3000t.config` / `rax3000m.config`（在 `MT7981` 分支根目录） | 按设备型号命名的 OpenWrt menuconfig 配置，master 不存放配置文件 — 定义目标设备、内核选项、软件包；`ax3000t.config` 面向 hanwckf 21.02 的 `mediatek/mt7981`，`rax3000m.config` 面向个人 fork `24.10.6` 的 `mediatek/filogic`，两份配置的 target 符号与软件包段互不通用；工作流复制成 `openwrt/.config` 并无条件追加 `CONFIG_CCACHE=y`（`dl/` 与 `.ccache` 两层缓存默认启用；三份固件编译工作流各带 `clean_dl_cache` / `clean_ccache` 两个清理开关，默认不勾）；缓存 key 的前缀取自工作流 env 的 `CONFIG_NAME`，三个值（`an7581` / `ax3000t` / `rax3000m`）两两不同，key 与恢复键都带 `-dl-` / `-ccache-` 段，同一分支上的多份工作流才不会恢复到彼此的缓存；改设备名要同步 `CONFIG_FILE`、`CONFIG_NAME` 和 key 里 `hashFiles` 的字面文件名（该参数不接受变量）；勾选清理开关时对应的 `Clear ... cache` 步骤排在同层 `Cache ...` 之前，删掉本设备前缀的条目后本趟全量下载/重编、收尾重存（一趟即恢复热度），并有删净断言，没删净直接失败；`rax3000m.config` 另显式关闭 7 个 `trusted-firmware-a-mt79xx-ram-*`（上游 `include/trusted-firmware-a.mk` 给了 `DEFAULT:=TARGET_mediatek_filogic`，勾 filogic 就默认全选，各自只往 BIN_DIR 丢一个 UART 救砖 `mt79xx-ram-*-bl2.bin`，关掉省 7 次 TFA 交叉编译；`*-spim-nand-ddr4` 等隐藏变体不能关，镜像构建要用它们的 staging 产物） |
-| `add-feed-sources.sh` | feeds 更新**前**执行的钩子脚本 — 往 `feeds.conf.default` 追加本项目的增量 feed。feed 名只能用字母、数字、下划线，带连字符会让 `feeds update` 报语法错误。AN7581 分支当前插入 `mosdns` feed（`sbwml/luci-app-mosdns`，锁 tag `v5.3.4-r15`）并追加 `lucky`（`gdy666/luci-app-lucky`，`v3.3.3`）与 `airoha_npu`（`DenzelVincent/luci-app-airoha-npu`，`v1.2.1`），均 `grep` 判重；MT7981 分支只追加 `lucky`（同样锁 `v3.3.3`）。三条一律锁 tag：不跟分支，也不在 CI 里动态取最新 tag（那等于回到 HEAD 漂移）；升版只用新 tag 名、不复用旧名（tag 可被 force-push 重指），tag 名写错或忘了推会让 `feeds update -a` 退出非 0 而不是静默丢包；本地换 tag 要先删 `feeds/<name>/`（带 `^ref` 的 feed 在 `scripts/feeds` 里是"给了 ref 就不 update"）；连字符限制只约束 feed 名，`^<ref>` 段里的 `-` 不受影响。**`mosdns` 必须用 `sed` 插到 `src-git packages` 之前而非追加** —— `immortalwrt/packages` 里也有 `net/mosdns`，而 `scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed，行序反了会装成官方那份，脚本插完立刻断言行序。源码仓库只保留默认 feed，增量 feed 一律在本脚本增删；也不写回源码仓库。 |
+| `add-feed-sources.sh` | feeds 更新**前**执行的钩子脚本 — 往 `feeds.conf.default` 追加本项目的增量 feed。feed 名只能用字母、数字、下划线，带连字符会让 `feeds update` 报语法错误。AN7581 分支当前插入 `mosdns` feed（`sbwml/luci-app-mosdns`，pin `dbdd91a…` = tag `v5.3.4-r15`）并追加 `lucky`（`gdy666/luci-app-lucky`，pin `b07f65c…`）与 `airoha_npu`（`DenzelVincent/luci-app-airoha-npu`，pin `b24b50a…` = tag `v1.2.1`），均 `grep` 判重；MT7981 分支只追加 `lucky`（同一条 pin）。一律锁完整 commit sha、不锁 tag：`scripts/feeds` 的 `init_commit` 是 `clone --depth 1` → `fetch --depth=1 origin '<ref>'` → `checkout '<ref>'`，末步按**名字**检出，浅克隆只有在该 ref 正好指向被克隆的那个 commit 时才有 `refs/tags/<ref>`，非 tip 的 tag 一律 `pathspec ... did not match` 并让整个步骤退出非 0；sha 按对象取、按对象检出，与 tip 位置无关。脚本末尾断言每条 ref 都是 40 位十六进制；本地换 pin 要先删 `feeds/<name>/`（带 `^ref` 的 feed 在 `scripts/feeds` 里是"给了 ref 就不 update"）；连字符限制只约束 feed 名，`^<ref>` 段里的 `-` 不受影响。**`mosdns` 必须用 `sed` 插到 `src-git packages` 之前而非追加** —— `immortalwrt/packages` 里也有 `net/mosdns`，而 `scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed，行序反了会装成官方那份，脚本插完立刻断言行序。源码仓库只保留默认 feed，增量 feed 一律在本脚本增删；也不写回源码仓库。 |
 | `build-feed-packages.sh` | `make defconfig` **后**、`make package/index` **前**执行的钩子脚本（仅 `publish-feed-repos.yml`） — 从出厂 `customfeeds.list` 取 feed 名，再到 `tmp/.packagedeps` 里取这些 feed 下被 `.config` 选中的包路径，拼成 `make package/<路径>/compile` 目标；不编内核、不组装镜像，但工具链与依赖省不掉。空集合、feed 目录不存在都硬失败 |
 | `set-firmware-defaults.sh` | `make defconfig` **后**、编译**前**执行的钩子脚本 — 用 `sed` 改源码树里会被装进 rootfs 的文件，即固件的出厂默认值（恢复出厂和 `sysupgrade -n` 后仍是这里的值）。AN758x 编译目标共用一份，改动对所有产出生效；MT7981 与 AN7581 两分支都把默认 LAN IP 改成 `10.0.0.1` |
 | `publish-feed-repos.sh` | 编译**完成后**、上传 Pages **前**执行的钩子脚本 — 逐条解析出厂 `files/etc/apk/repositories.d/customfeeds.list` 里的 `<arch>/<feed>`，把已签名的仓库拷成 `feed-site/`；清单里任何一条本次没产出就失败（Pages 整站替换）。索引与签名由构建系统的 `index` 目标用固件同一把私钥完成，本脚本只搬运，由 `publish-feed-repos.yml` 调用 |
