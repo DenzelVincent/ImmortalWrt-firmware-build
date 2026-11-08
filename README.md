@@ -92,10 +92,11 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 > 每个 `luci-app-*` 都配套 `luci-i18n-<app>-zh-cn`（含 `luci-i18n-base-zh-cn`），简体中文界面内置。
 > 主题带 `luci-theme-argon`，`luci-theme-bootstrap` 一并保留。
 >
-> `luci-app-lucky` 由 `add-feed-sources.sh` 追加的 `lucky` feed（固定提交）提供，随 feeds 安装自动就位；
+> `luci-app-lucky` 由 `add-feed-sources.sh` 追加的 `lucky` feed（锁 tag `v3.3.3`）提供，随 feeds 安装自动就位；
 > `luci-app-mosdns` 由同一脚本插入的 `mosdns` feed 提供，
 > 其中 `mosdns` feed 有行序硬约束（必须排在 `src-git packages` 之前，理由见脚本注释）；
-> `luci-app-airoha-npu` 由同一脚本追加的 `airoha_npu` feed 提供（本仓库自维护，不锁提交，随 `main` 走）。
+> `luci-app-airoha-npu` 由同一脚本追加的 `airoha_npu` feed 提供（本仓库自维护，同样锁 tag `v1.2.1`，
+> 发版要走「bump 版本号 → 打 tag → 改这里的 pin」，理由见下面 `add-feed-sources.sh` 一节）。
 > 顺序反了 kconfig 不报错，只会静默不打包该界面；本地编译同样要先跑 `add-feed-sources.sh` 再 `./scripts/feeds update -a`（见下面"本地编译"一节）。
 >
 > MosDNS 出厂是**关闭**状态（`/etc/config/mosdns` 里 `enabled '0'`、监听 `5335`），不会开机就占住 53 端口；
@@ -172,13 +173,23 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 
 feeds 更新**前**执行，改 `feeds.conf.default`。源码仓库（PonWrt）只保留默认 feed，第三方 feed 统一在这里增删：
 
-- `mosdns` feed（`sbwml/luci-app-mosdns`，固定提交 `dbdd91a`）用 `sed` **插到 `src-git packages` 之前**，不是追加：
+- 三条 feed 一律**锁 tag**（`^<tag>`）：不跟分支，也不在 CI 里动态取"最新 tag"——动态取等于回到 HEAD 漂移，
+  重跑一次工作流就可能换一份源码，已发布的仓库与本次镜像对不上。tag 和完整 commit 走的是 `scripts/feeds`
+  里同一条 `init_commit`（`git fetch --depth=1 origin '<ref>' && git checkout '<ref>'`），锁 tag 不比锁 commit 弱；
+  代价是 tag 能被 force-push 重指，所以升版只用新 tag 名、绝不复用旧名，且打 tag 前先推代码。
+  ref 里的连字符不受 feed 命名限制（那条限制只作用于 feed 名）。tag 名写错或忘了推，`feeds update -a`
+  该 feed 失败并让整个步骤退出非 0，不是静默丢包。本地换 tag 要先删 `feeds/<name>/`：带 `^ref` 的 feed
+  在 `scripts/feeds` 里是"给了 ref 就不 update"。
+- `mosdns` feed（`sbwml/luci-app-mosdns`，`v5.3.4-r15`，即原锁的 commit `dbdd91a`）用 `sed` **插到 `src-git packages` 之前**，不是追加：
   `immortalwrt/packages` 里也有一个 `net/mosdns`（5.3.3），而 `scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed。
   行序反了会装成官方那份 —— 缺 `stats_api` / query log / `adblock_set` 等二十多个补丁，LuCI 统计页拿不到数据，
   还会和 `luci-app-mosdns` 自带的 `/etc/init.d/mosdns` 撞文件。脚本插完立刻断言行序
-- `lucky` feed（`gdy666/luci-app-lucky`，固定提交 `9449a52`）追加到末尾
-- `airoha_npu` feed（`DenzelVincent/luci-app-airoha-npu`，本仓库自维护，**不锁提交**）追加到末尾。
-  第三方仓库才锁 `^<commit>`；自维护的锁了就没法"源码更新 → 发布更新"
+- `lucky` feed（`gdy666/luci-app-lucky`，`v3.3.3`，annotated tag，peel 出来就是原锁的 commit `9449a52`）追加到末尾。
+  上游 `main` 上还有 5 个未打 tag 的提交（含 2026-10-29「update v3.5.0 core」），按 tag 锁就是先不要这批改动，等上游打 tag 再升
+- `airoha_npu` feed（`DenzelVincent/luci-app-airoha-npu`，`v1.2.1`）追加到末尾。自维护仓库同样锁 tag，
+  要的是「镜像里预装的那份」与「Pages 发布的那份」必然同源。发版顺序：app 仓库提交 → 推 `main` → 打 tag →
+  改这里的 pin → 跑 `publish-feed-repos.yml`；打 tag 时必须同步 bump `PKG_VERSION` 或 `PKG_RELEASE`，
+  apk 只比版本号不比内容，版本号不动设备端 `apk add` 会判定"已满足"、不升级
 - 三条都用 `grep` 判重，重复执行不会写出第二条
 - 其余示例（`helloworld`、PassWall、kenzok8）保持注释状态
 - feed 名只能用字母数字下划线，带连字符会让 `feeds update` 报 `Syntax error in feeds.conf.default`
@@ -245,7 +256,8 @@ feeds 更新**前**执行，改 `feeds.conf.default`。源码仓库（PonWrt）�
 `files/etc/apk/repositories.d/customfeeds.list` 里那几条。发布有两个入口，产出的仓库同一把密钥签名：
 
 - 固件编译工作流 `build-an7581-immortalwrt.yml` 勾选 `publish_feeds`：整镜像那趟顺带发布，包与镜像同一天基线
-- 独立的 `publish-feed-repos.yml`：不产镜像，只编发布集里的 app 包并发布，用于 app 源码更新后单独发版
+- 独立的 `publish-feed-repos.yml`：不产镜像，只编发布集里的 app 包并发布。app 源码更新后单独发版走这条，
+  但 feed 锁的是 tag，所以顺序是「app 仓库 bump 版本号 → 打 tag → 推 → 改 `add-feed-sources.sh` 的 pin → 再跑本工作流」
 
 **升级口径：只手工装单个包，不跑全局升级。** 官方源是每日 snapshot，`apk upgrade -a` 会把
 `luci-base`、`libc` 这些依赖拉到与固件编译那天不一致的版本，而自建站点上的包是按编译那天的基线做的。
