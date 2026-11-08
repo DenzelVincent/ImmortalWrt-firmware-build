@@ -56,7 +56,7 @@ OpenClash 的 `luci-compat`/`dnsmasq-full`/`bash`/`curl`/`ruby`/`kmod-nft-tproxy
 
 > `luci-app-lucky` 走 feed 安装：`gdy666/luci-app-lucky` 的仓库根下是 `lucky/` 与
 > `luci-app-lucky/` 两个包目录，可直接作为 feed 扫描。两条工作流都由 `add-feed-sources.sh`
-> 在 feeds update 前追加同一条 `lucky` feed（锁 tag `v3.3.3`，`grep` 判重），
+> 在 feeds update 前追加同一条 `lucky` feed（pin `b07f65c…`，lucky 3.5.0-r1 / luci-app-lucky 3.0.0-r31；`grep` 判重），
 > 源码仓库的 `feeds.conf.default` 保持默认。
 
 ## 支持的设备
@@ -86,7 +86,7 @@ OpenClash 的 `luci-compat`/`dnsmasq-full`/`bash`/`curl`/`ruby`/`kmod-nft-tproxy
 | 文件 | 用途 |
 |---|---|
 | `ax3000t.config`、`rax3000m.config` | OpenWrt menuconfig 配置 — 一份对应一条固件工作流，各自只启用本机型设备（`ax3000t.config` 里同一机型的其它变体行注释保留，勾选哪些就出哪些镜像）。`ax3000t.config` 面向 hanwckf 21.02 的 `mediatek/mt7981`，`rax3000m.config` 面向个人 fork `24.10.6` 的 `mediatek/filogic`，两份配置的 target 符号与软件包段互不通用。工作流把选中的那份复制成 `openwrt/.config`，并无条件追加 `CONFIG_CCACHE=y`（`dl/` 与 `openwrt/.ccache` 两层缓存默认启用，触发表只留清理开关）。`Cache ...` 的 key 前缀取自工作流 env 的 `CONFIG_NAME`（与 `CONFIG_FILE` 成对定义），改设备要同步 `CONFIG_FILE`、`CONFIG_NAME`、key 里的哈希文件名、`EXPECT_TARGET`/`EXPECT_DEVICE` 四处。`Load custom config` 步骤末尾有两道断言：defconfig 结果里必须仍有 `EXPECT_TARGET`/`EXPECT_DEVICE`（拦配置文件与源码树不匹配导致的静默跑错 target），以及 `CONFIG_CCACHE=y` 仍在。`rax3000m.config` 另显式关闭 7 个 `trusted-firmware-a-mt79xx-ram-*`：上游 `include/trusted-firmware-a.mk` 对它们写了 `DEFAULT:=TARGET_mediatek_filogic`，勾了 filogic 就默认全选，各自只往 BIN_DIR 丢一个 UART 救砖 `mt79xx-ram-*-bl2.bin`，关掉可省 7 次 arm-trusted-firmware 交叉编译（真正刷机用的 `*-spim-nand-ddr4` 等隐藏变体不能关，镜像构建要用它们的 staging 产物）。勾选 `clean_dl_cache` / `clean_ccache` 时，对应的 `Clear ... cache` 步骤排在同层 `Cache ...` 步骤之前，先从 Actions 缓存存储删掉本设备前缀的条目，本趟恢复落空、全量下载/重编并收尾重存，一趟冷编译即恢复热度；删除后还有残留断言，没删净直接失败 |
-| `add-feed-sources.sh` | feeds 更新**前**执行的钩子脚本 — 增删第三方软件源（改 `feeds.conf.default`）。feed 名只能用字母、数字、下划线，带连字符会让 `feeds update` 报语法错误（该限制只约束 feed 名，`^<ref>` 段里的连字符不受影响）。当前追加 `lucky` feed（`gdy666/luci-app-lucky`，锁 tag `v3.3.3`；`grep` 判重，重复执行不会写第二条）。源码仓库只保留默认 feed，第三方 feed 一律在本脚本追加。源码引用统一锁 tag、不跟分支也不在 CI 里动态取最新 tag，升版只用新 tag 名（tag 可被 force-push 重指）；换 tag 后本地要先删 `feeds/lucky/`（带 `^ref` 的 feed 在 `scripts/feeds` 里不会再 update） |
+| `add-feed-sources.sh` | feeds 更新**前**执行的钩子脚本 — 增删第三方软件源（改 `feeds.conf.default`）。feed 名只能用字母、数字、下划线，带连字符会让 `feeds update` 报语法错误（该限制只约束 feed 名，`^<ref>` 段里的连字符不受影响）。当前追加 `lucky` feed（`gdy666/luci-app-lucky`，pin 完整 commit sha `b07f65c28bb5…`；`grep` 判重，重复执行不会写第二条）。源码仓库只保留默认 feed，第三方 feed 一律在本脚本追加。源码引用统一锁完整 commit sha，不锁 tag、不跟分支、也不在 CI 里动态取最新：`scripts/feeds` 的 `init_commit` 末步按**名字** `checkout`，浅克隆下非 tip 的 tag 解析不到，会 `pathspec ... did not match` 让整个步骤退出非 0，sha 则按对象取、按对象检出，与 tip 位置无关。脚本末尾断言每条 ref 都是 40 位十六进制；换 pin 后本地要先删 `feeds/lucky/`（带 `^ref` 的 feed 在 `scripts/feeds` 里不会再 update） |
 | `set-firmware-defaults.sh` | `make defconfig` **后**、编译**前**执行的钩子脚本 — 用 `sed` 改源码树里会被装进 rootfs 的文件，即固件的出厂默认值（恢复出厂和 `sysupgrade -n` 后仍是这里的值）。当前把默认 LAN IP 改为 `10.0.0.1`；DHCP 地址池出厂值为 `start=100` / `limit=150`（即 `.100`–`.249`），一般不必显式配置 |
 | `feeds.conf.default` | （可选）覆盖默认 feeds 软件源 |
 | `files/` | （可选）预置文件目录，将文件覆盖到固件根文件系统 |
