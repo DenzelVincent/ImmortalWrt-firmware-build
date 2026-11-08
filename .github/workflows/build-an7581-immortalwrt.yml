@@ -34,7 +34,7 @@ on:
 env:
   # 源码仓库地址
   REPO_URL: https://github.com/DenzelVincent/ponwrt.git
-  # 源码分支：AN7581 使用 master 分支（纯净基线，不含 GPON PCS 改动）
+  # 源码分支：AN7581 使用 master 分支（XGS-PON 基线）
   REPO_BRANCH: master
   # 设备配置文件（make menuconfig 生成），工作流把它复制成 openwrt/.config
   # hashFiles 只接受字面量，改名须同步下面两条 cache key 里的文件名
