@@ -1,7 +1,7 @@
 # ============================================================
-# U-Boot 编译工作流
-# 支持机型: 小米 AX3000T / CMCC RAX3000M (MT7981 平台)
-# 使用矩阵策略并行编译各机型的不同硬件版本
+# U-Boot 编译工作流 (MT7981)
+# 目标设备: 小米 AX3000T / CMCC RAX3000M
+# 源码来源: https://github.com/hanwckf/bl-mt798x.git (master 分支)
 # 触发方式: 手动触发 (workflow_dispatch)
 # ============================================================
 
@@ -37,10 +37,8 @@ jobs:
       actions: write    # 允许上传编译产物 artifact
 
     # ----------------------------------------------------------
-    # 矩阵：每个 board 一个独立 runner 并行编译，增删机型改这里
-    # 上游 bl-mt798x 另有 ax3000t_an8855 (外置交换芯片) 与 cmcc_rax3000m-emmc (eMMC) 两种 board
-    # MULTI_LAYOUT=1 时 build.sh 取 <soc>_<board>_multi_layout_defconfig，上游只为 ax3000t 系列提供该配置，
-    # 所以 cmcc_rax3000m 必须 multi_layout=0，否则报 defconfig not found
+    # 矩阵：每个 board 一个 runner 并行编译，增删机型改这里
+    # 上游只为 ax3000t 系列提供 multi_layout 配置，cmcc_rax3000m 必须填 0
     # ----------------------------------------------------------
     strategy:
       matrix:
@@ -59,14 +57,13 @@ jobs:
         uses: actions/checkout@main
 
       # ----------------------------------------------------------
-      # 步骤 2: 安装 aarch64 交叉编译工具链和依赖（MT7981 是 ARM64），设置时区并准备 /srcdir
+      # 步骤 2: 安装 aarch64 交叉编译工具链，设置时区并准备 /srcdir
       # ----------------------------------------------------------
       - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
-          # gcc-aarch64-linux-gnu 交叉编译器 + bootloader 所需的 flex/bison/dtc/openssl
           sudo -E apt-get -qq install gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler
 
           sudo -E apt-get -qq autoremove --purge
@@ -89,7 +86,7 @@ jobs:
             ln -sf /srcdir/u-boot $GITHUB_WORKSPACE/u-boot      
 
       # ----------------------------------------------------------
-      # 步骤 4: 编译 U-Boot（SOC/BOARD/MULTI_LAYOUT/FIXED_MTDPARTS 由上游 build.sh 读取，multi_layout 见矩阵说明）
+      # 步骤 4: 按矩阵的 SOC/BOARD/MULTI_LAYOUT 编译 U-Boot
       # ----------------------------------------------------------
       - name: Compile U-Boot
         id: compile

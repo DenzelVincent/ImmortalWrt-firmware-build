@@ -13,25 +13,22 @@ on:
   # 手动触发：可在 GitHub Actions 页面点击 "Run workflow" 按钮
   workflow_dispatch:
     inputs:
-      # dl 源码包下载缓存：默认启用，Cache downloads 步骤恒定恢复、收尾保存。
-      # 勾选后 Clear dl cache 先删掉 ${CONFIG_NAME}-dl- 前缀条目，本趟全量重下、收尾重灌。
+      # 清空 dl 下载缓存，本趟全量重下、收尾重灌
       clean_dl_cache:
         description: 先清空 dl 下载缓存再编译（改了 package 的源码版本/地址、或怀疑 dl 里是旧包时勾选）
         type: boolean
         default: false
-      # ccache 编译对象缓存：同样默认启用，CONFIG_CCACHE=y 由 Load custom config 步骤写进 .config。
-      # 勾选后先删 ${CONFIG_NAME}-ccache- 前缀条目，本趟全部未命中、收尾重灌。
+      # 清空 ccache 编译对象缓存，本趟全部未命中、收尾重灌
       clean_ccache:
         description: 先清空 ccache 编译对象缓存再编译（怀疑产物不对、需排除 ccache 时勾选）
         type: boolean
         default: false
-      # Release 发布开关：默认关闭，只上传 artifact，不创建 GitHub Release、不清理旧 runs/Releases。
+      # Release 发布开关：关闭时只上传 artifact，不建 Release、不清理旧 runs
       release:
         description: 编译成功后创建 GitHub Release（默认关闭，关闭时只保留 artifact）
         type: boolean
         default: false
-      # 自建 feed 源开关：门控 stage-feeds / pages 两个环节，默认关闭；关闭时 feed 仓库随整镜像一起丢弃。
-      # 开启前提：仓库 Settings → Pages 把 Source 设为 "GitHub Actions"，否则 pages job 会失败（不静默跳过）。
+      # 自建 feed 源开关：门控 Stage feed repositories / pages 两个 job；开启前需把仓库 Pages Source 设为 GitHub Actions
       publish_feeds:
         description: 把自定义 feed 的 apk 仓库发布到本仓库 Pages（需先在 Settings→Pages 选 GitHub Actions）
         type: boolean
@@ -42,29 +39,23 @@ env:
   REPO_URL: https://github.com/DenzelVincent/ponwrt.git
   # 源码分支：AN7581 使用 master 分支（XGS-PON 基线）
   REPO_BRANCH: master
-  # 设备配置文件（make menuconfig 生成），工作流把它复制成 openwrt/.config
-  # hashFiles 只接受字面量，改名须同步下面两条 cache key 里的文件名
+  # 设备配置文件（复制成 openwrt/.config）与缓存 key 前缀；改名须同步两条 cache key 里的文件名
   CONFIG_FILE: an7581.config
-  # cache key 前缀 = 配置文件名去掉 .config，换设备时与上面成对改
   CONFIG_NAME: an7581
   # 目标设备和子目标（编译产物路径使用）
   DEVICE_NAME: XG-040G-MD
   SUBTARGET: an7581
-  # 本工作流的三个自定义脚本 = 流程里的三个插入点，执行阶段见各行注释
-  # （发布工作流 publish-feed-repos.yml 复用 add-feed-sources.sh 与 publish-feed-repos.sh，
-  #   中间换 build-feed-packages.sh 只编发布集选中的包、不编镜像）
+  # 三个自定义脚本 = 流程里的三个插入点，执行阶段见各行注释
   # 1) ./scripts/feeds update -a 之前 —— 增删增量 feed 源（mosdns / lucky / airoha_npu）
   SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
   # 2) make defconfig 之后 —— 改固件出厂默认值 (默认 IP、DHCP 等)
   SCRIPT_SET_FIRMWARE_DEFAULTS: set-firmware-defaults.sh
   # 3) 编译完成之后、上传 Pages 之前 —— 把各 feed 的签名仓库拷成站点目录并与出厂源对账
   SCRIPT_PUBLISH_FEED_REPOS: publish-feed-repos.sh
-  # 发布集（哪些 feed 上 Pages）不写在上面这些 env 里：唯一事实来源是
-  # files/etc/apk/repositories.d/customfeeds.list，两个发布脚本都逐条解析它，
-  # 清单在本次产物里缺任何一条就直接失败，省掉"工作流一份列表、清单一份列表"的漂移。
+  # 发布集（哪些 feed 上 Pages）的唯一事实来源是 files/etc/apk/repositories.d/customfeeds.list，两个发布脚本都逐条解析它
   # 编译环境时区
   TZ: Asia/Shanghai
-  # 可选覆盖：本仓库根目录存在该文件时才 mv 覆盖源码自带 feeds，当前不存在
+  # 可选覆盖：本仓库根存在该文件时才覆盖源码自带 feeds
   FEEDS_CONF: feeds.conf.default
 
 jobs:
@@ -121,7 +112,7 @@ jobs:
         sudo chown $USER:$GROUPS /srcdir
 
     # ----------------------------------------------------------
-    # 步骤 4: 克隆源码到 /srcdir（磁盘更大），软链接回工作区
+    # 步骤 4: 克隆源码到 /srcdir，解析固件版本号供产物名使用
     # ----------------------------------------------------------
     - name: Clone source code
       working-directory: /srcdir
@@ -130,7 +121,6 @@ jobs:
         df -hT $PWD
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /srcdir/openwrt $GITHUB_WORKSPACE/openwrt
-        # 版本号取 openwrt/include/version.mk 里 VERSION_NUMBER 的兜底字面量，供产物名与 Release 标签使用
         raw="$(grep -m1 -F 'VERSION_NUMBER:=$(if ' openwrt/include/version.mk)"
         ver="${raw%)}"
         ver="${ver##*,}"
@@ -138,21 +128,16 @@ jobs:
         echo "FW_VERSION=$ver" >> $GITHUB_ENV
 
     # ----------------------------------------------------------
-    # 步骤 5: 缓存 dl/（源码包）与 openwrt/.ccache（编译对象），两层默认启用
-    # Clear ... cache 必须排在同层 Cache 之前，否则本趟仍用旧缓存、开关等于没生效
-    # key = CONFIG_NAME + -dl-/-ccache- + 配置内容哈希；设备名前置以保证各前缀互不为前缀
-    # ccache 路径须与 rules.mk 的 CCACHE_DIR 默认值 $(TOPDIR)/.ccache 一致，写 ~/.ccache 命中率恒 0
+    # 步骤 5: 缓存 dl/（源码包）与 openwrt/.ccache（编译对象），Clear 排在同层 Cache 之前
     # ----------------------------------------------------------
     - name: Clear dl cache
       if: ${{ inputs.clean_dl_cache }}
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # 删掉本设备前缀的全部缓存条目（--limit 100 是 API 单页上限）
         gh cache list --limit 100 --json key,id | \
           jq -r '.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-dl-")) | .id' | \
           xargs -r gh cache delete
-        # 删净断言：还有残留说明条目超过单页上限或别的 ref 仍有同名前缀，本趟不算冷编译
         left=$(gh cache list --limit 100 --json key | \
           jq '[.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-dl-"))] | length')
         if [ "$left" != "0" ]; then
@@ -173,11 +158,9 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # 删掉本设备前缀的全部缓存条目（--limit 100 是 API 单页上限）
         gh cache list --limit 100 --json key,id | \
           jq -r '.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-ccache-")) | .id' | \
           xargs -r gh cache delete
-        # 删净断言：还有残留说明条目超过单页上限或别的 ref 仍有同名前缀，本趟不算冷编译
         left=$(gh cache list --limit 100 --json key | \
           jq '[.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-ccache-"))] | length')
         if [ "$left" != "0" ]; then
@@ -194,8 +177,7 @@ jobs:
           ${{ env.CONFIG_NAME }}-ccache-
 
     # ----------------------------------------------------------
-    # 步骤 6: 加载自定义 feeds 源
-    # 根目录存在 feeds.conf.default 时覆盖源码默认值，然后执行 add-feed-sources.sh
+    # 步骤 6: 执行 add-feed-sources.sh 增删第三方 feed 源
     # ----------------------------------------------------------
     - name: Load custom feeds
       run: |
@@ -217,8 +199,7 @@ jobs:
       run: cd openwrt && ./scripts/feeds install -a
 
     # ----------------------------------------------------------
-    # 步骤 9: 加载 APK 仓库签名密钥（Secret: PONWRT_APK_PRIVATE_KEY）
-    # 不勾选 publish_feeds 时缺 Secret 只跳过；勾选了就必须失败——见下面的断言
+    # 步骤 9: 加载 APK 仓库签名密钥（Secret: PONWRT_APK_PRIVATE_KEY），勾选 publish_feeds 时缺密钥必须失败
     # ----------------------------------------------------------
     - name: Load repository signing key
       working-directory: openwrt
@@ -230,34 +211,25 @@ jobs:
           printf '%s\n' "$PONWRT_APK_PRIVATE_KEY" > private-key.pem
           openssl ec -in private-key.pem -pubout -out public-key.pem
         elif [ '${{ inputs.publish_feeds }}' = 'true' ]; then
-          # package/Makefile:77 有兜底规则：私钥不存在时 make 会 openssl ecparam -genkey 现造一把，
-          # 索引照签、编译照成功，但固件 /etc/apk/keys/ 里的公钥不认它，设备端 apk add 全部报 unspec。
           echo "::error::勾选了 publish_feeds 但未配置 Secret PONWRT_APK_PRIVATE_KEY，仓库会用随机密钥签名、设备端不认；请配置 Secret 或取消勾选"
           exit 1
         fi
 
     # ----------------------------------------------------------
-    # 步骤 10: 设备配置复制成 openwrt/.config 并追加 CONFIG_CCACHE=y
-    # make defconfig 生成完整配置；files/ 存在则作为固件预置文件；
-    # 随后执行 set-firmware-defaults.sh
+    # 步骤 10: 复制设备配置并追加 CONFIG_CCACHE=y，make defconfig 后自检并执行出厂默认值脚本
     # ----------------------------------------------------------
     - name: Load custom config
       run: |
         [ -e files ] && mv files openwrt/files
-        # 缺配置文件必须显式失败：写成 [ -e x ] && cp 时 set -e 不会终止步骤，
-        # 会静默用源码仓库默认配置编到底，产出没有本项目软件包的固件还显示成功。
         if [ ! -e "$CONFIG_FILE" ]; then
           echo "::error::缺少编译配置文件 $CONFIG_FILE（应位于本仓库根目录，检查工作流 CONFIG_FILE 与分支上的文件名是否一致）"
           exit 1
         fi
         cp "$CONFIG_FILE" openwrt/.config
-        # CONFIG_CCACHE=y 只写进 .config（rules.mk 读的就是它，与命令行传参等价，少一处会改漏的状态）；
-        # 前置 \n 防止配置末行缺换行符时粘成一条无效行、被 kconfig 静默忽略。
         printf '\n%s\n' 'CONFIG_CCACHE=y' >> openwrt/.config
         chmod +x $SCRIPT_SET_FIRMWARE_DEFAULTS
         cd openwrt
         make defconfig
-        # 自检：开关被 defconfig 丢掉就立刻失败，别白编一趟
         grep -q '^CONFIG_CCACHE=y' .config || {
           echo "::error::CONFIG_CCACHE=y 没能进入 defconfig 结果，检查 $CONFIG_FILE 里是否有 CONFIG_DEVEL=y"
           exit 1
@@ -266,7 +238,6 @@ jobs:
 
     # ----------------------------------------------------------
     # 步骤 11: 预下载源码包，避免编译期网络超时
-    # 不按大小清理 dl/：go-mod-cache 里上千个 <1KB 的正常文件会被误删（run 104976085590），怀疑坏包就勾 clean_dl_cache
     # ----------------------------------------------------------
     - name: Download package
       id: package
@@ -275,8 +246,7 @@ jobs:
         make download -j8 V=11
 
     # ----------------------------------------------------------
-    # 步骤 12: 编译固件
-    # 失败先同级并发重试一次，仍失败才降级 -j1 V=s（-j1 会把剩余所有包串行）；ccache 开关见步骤 10
+    # 步骤 12: 编译固件（同级并发重试一次，仍失败降级 -j1 V=s）
     # ----------------------------------------------------------
     - name: Compile the firmware
       id: compile
@@ -295,8 +265,7 @@ jobs:
       run: df -hT
 
     # ----------------------------------------------------------
-    # 步骤 14: 整理固件文件
-    # 只把可刷写镜像 (*.bin / *.itb) 拷到 release/<设备>/，manifest/buildinfo/校验和不保留
+    # 步骤 14: 把可刷写镜像收进 release/<设备>/
     # ----------------------------------------------------------
     - name: Organize firmware files
       id: organize
@@ -304,7 +273,6 @@ jobs:
       run: |
         echo "DEVICE=$DEVICE_NAME" >> $GITHUB_ENV
         mkdir -p "release/$DEVICE_NAME"
-        # 产物路径用 env 的 SUBTARGET 拼，换设备只改 env 一处
         for f in openwrt/bin/targets/airoha/${SUBTARGET}/*.bin openwrt/bin/targets/airoha/${SUBTARGET}/*.itb; do
           [ -e "$f" ] || continue
           cp "$f" "release/$DEVICE_NAME/"
@@ -324,8 +292,6 @@ jobs:
 
     # ----------------------------------------------------------
     # 步骤 16: 执行 publish-feed-repos.sh 把各 feed 已签名的仓库拷成 Pages 站点目录
-    # 索引与签名是 make 的 index 目标顺手做好的（apk mkndx --sign private-key.pem），脚本只搬运，
-    # 并逐条核对出厂 customfeeds.list 指向的路径本次确实产出了，缺文件就在这一步失败
     # ----------------------------------------------------------
     - name: Stage feed repositories
       id: feeds
@@ -361,9 +327,7 @@ jobs:
     steps:
 
       # ----------------------------------------------------------
-      # 步骤 1: 下载本次 run 的固件 artifact（每个解压到同名子目录）
-      # 必须用 pattern 排除 Pages artifact：勾了 publish_feeds 时本次 run 里还有个 github-pages，
-      # 全量下载会让下面按目录打包的循环把它也当成一台设备的固件产出一个 zip
+      # 步骤 1: 下载本次 run 的固件 artifact（pattern 排除 Pages 暂存件，每个解压到同名子目录）
       # ----------------------------------------------------------
       - name: Download firmware artifacts
         uses: actions/download-artifact@v4
@@ -388,12 +352,12 @@ jobs:
           ls -l release/
 
       # ----------------------------------------------------------
-      # 步骤 3: 版本号与时间戳从 artifact 名回取，Release 标签与 artifact 名一致
+      # 步骤 3: 版本号与时间戳从 artifact 名回取，生成 Release 标签与说明
       # ----------------------------------------------------------
       - name: Generate release tag
         id: tag
         run: |
-          # build job 的 env 不跨 job，版本号从本次 run 的 artifact 名回取（约定 ImmortalWrt_<版本>_<型号>_<日期-时分>）
+          # 约定 artifact 名 ImmortalWrt_<版本>_<型号>_<日期-时分>；build job 的 env 不跨 job，只能回取
           first="$(ls -1 artifacts | head -1)"
           [[ "$first" =~ ^ImmortalWrt_([0-9A-Za-z.-]+)_(.+)_([0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2})$ ]] || { echo "::error::artifact 名不符合命名约定: $first"; exit 1; }
           fw="${BASH_REMATCH[1]}"
@@ -443,8 +407,6 @@ jobs:
 
   # ------------------------------------------------------------
   # Pages 发布 job：把 build 暂存的 feed 仓库部署成设备可访问的自建源
-  # 站点地址 https://<owner>.github.io/<本仓库名>/packages/<arch>/<feed>/packages.adb，
-  # 固件出厂的 files/etc/apk/repositories.d/customfeeds.list 写的就是这批地址
   # 由 workflow_dispatch 的 publish_feeds 开关门控，默认关闭；开启前需把仓库 Pages Source 设为 GitHub Actions
   # ------------------------------------------------------------
   pages:

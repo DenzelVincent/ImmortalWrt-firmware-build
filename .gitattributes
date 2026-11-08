@@ -7,10 +7,8 @@
 # 例外: *.apk 显式 -text 禁止任何行尾转换。APK 包内含压缩数据，本机 autocrlf=true
 #       下 git 只能靠内容启发式判二进制，一旦被误判成文本，checkout 就会往包里
 #       注入 CR 导致包损坏；这条规则把该风险钉死。
-#       （历史上 pon-packages/*.apk 由 CI 回推入库，2026-10-13 随
-#        build-pon-packages.yml 一并删除；规则保留，给以后手工放入 SDK 编译产物兜底。）
-# 维护: 所有分支保持同一份内容（当前三个分支：AN7581 / MT7981-hanwckf / master；
-#       2026-10-15 原 AN7581-GPON、AN7583-GPON 两支已并入 AN7581，分支增减只改这一行）。
+#       （历史上 pon-packages/*.apk 由 CI 回推入库；规则保留，给以后手工放入 SDK 编译产物兜底。）
+# 维护: 所有分支保持同一份内容（当前三个分支：AN7581 / MT7981 / master；分支增减只改这一行）。
 #       新增跨平台脚本类型时按同样格式追加一行并同步到各分支。
 #       自检: `git ls-files --eol` 里除 *.apk（i/-text）外应全部是 i/lf；
 #       `git grep -I -l -P '\r' <分支>` 应为空（blob 内不含 CR）。
