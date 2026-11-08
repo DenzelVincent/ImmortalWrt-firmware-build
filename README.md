@@ -70,14 +70,14 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 
 | 软件包 | 说明 |
 | --- | --- |
-| `luci-app-adguardhome` | AdGuard Home DNS 过滤（同时预装 `adguardhome` 核心） |
 | `luci-app-airoha-npu` | Airoha NPU 硬件加速管理 |
+| `luci-app-argon-config` | Argon 主题设置 |
 | `luci-app-autoreboot` | 定时重启 |
+| `luci-app-diskman` | 磁盘分区 / 格式化 / 挂载管理 |
 | `luci-app-firewall` | 防火墙管理 |
 | `luci-app-hd-idle` | 硬盘休眠管理 |
 | `luci-app-lucky` | Lucky 多合一工具（端口转发、DDNS、反向代理） |
 | `luci-app-mosdns` | MosDNS 分流 DNS（国内外域名分流、广告拦截、查询日志；同时预装 `mosdns` 核心与 `geo2txt`） |
-| `luci-app-mosdns-panel` | MosDNS 监控面板（缓存命中率图表、日志实时筛选、一键清缓存/恢复 dump） |
 | `luci-app-openclash` | Clash 代理管理 |
 | `luci-app-package-manager` | 软件包管理 |
 | `luci-app-pon` | PON 光猫管理 |
@@ -86,18 +86,17 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 | `luci-app-upnp` | UPnP 管理 |
 
 > 上表按设备配置文件里实测的 `CONFIG_PACKAGE_luci-app-*=y` 列出。
-> 每个 `luci-app-*` 都配套 `luci-i18n-<app>-zh-cn`（含 `luci-i18n-base-zh-cn`），简体中文界面内置；
-> 例外是 `luci-app-mosdns-panel`，上游没有 `po/` 目录、不产出语言包（界面文案本就写死中文）。
+> 每个 `luci-app-*` 都配套 `luci-i18n-<app>-zh-cn`（含 `luci-i18n-base-zh-cn`），简体中文界面内置。
 > 主题带 `luci-theme-argon`，`luci-theme-bootstrap` 一并保留。
 >
 > `luci-app-lucky` 由 `add-feed-sources.sh` 追加的 `lucky` feed（固定提交）提供，随 feeds 安装自动就位；
-> `luci-app-mosdns` 与 `luci-app-mosdns-panel` 分别由同一脚本插入的 `mosdns` feed 和追加的 `mosdns_panel` feed 提供，
+> `luci-app-mosdns` 由同一脚本插入的 `mosdns` feed 提供，
 > 其中 `mosdns` feed 有行序硬约束（必须排在 `src-git packages` 之前，理由见脚本注释）；
 > `luci-app-airoha-npu` 不是 feed 格式，由工作流在 `make defconfig` 之前 `git clone` 到 `package/`。
 > 顺序反了 kconfig 不报错，只会静默不打包该界面；本地编译同样要先克隆再 `make defconfig`（见下面"本地编译"一节）。
 >
-> MosDNS 出厂是**关闭**状态（`/etc/config/mosdns` 里 `enabled '0'`、监听 `5335`），不与预装的 AdGuard Home 抢 53 端口；
-> 要用时在 LuCI「服务 → MosDNS」里自行启用。面板读的是 mosdns 的 API 端口，默认 `9091`，同样开箱即用。
+> MosDNS 出厂是**关闭**状态（`/etc/config/mosdns` 里 `enabled '0'`、监听 `5335`），不会开机就占住 53 端口；
+> 要用时在 LuCI「服务 → MosDNS」里自行启用，统计页读的是 mosdns 的 API 端口，默认 `9091`，开箱即用。
 
 ### PON 平台组件
 
@@ -164,12 +163,10 @@ feeds 更新**前**执行，改 `feeds.conf.default`。源码仓库（PonWrt）�
 
 - `mosdns` feed（`sbwml/luci-app-mosdns`，固定提交 `dbdd91a`）用 `sed` **插到 `src-git packages` 之前**，不是追加：
   `immortalwrt/packages` 里也有一个 `net/mosdns`（5.3.3），而 `scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed。
-  行序反了会装成官方那份 —— 缺 `stats_api` / query log / `adblock_set` 等二十多个补丁，LuCI 统计页和面板都拿不到数据，
+  行序反了会装成官方那份 —— 缺 `stats_api` / query log / `adblock_set` 等二十多个补丁，LuCI 统计页拿不到数据，
   还会和 `luci-app-mosdns` 自带的 `/etc/init.d/mosdns` 撞文件。脚本插完立刻断言行序
-- `mosdns_panel` feed（`MayflyDestiny/luci-app-mosdns-panel`，固定提交 `526ad2a`）追加到末尾即可，无同名包冲突。
-  它是 Lua 应用，`luci.mk` 检测到 `luasrc/` 会自动补 `+luci-lua-runtime`，配置文件里不用手写依赖
 - `lucky` feed（`gdy666/luci-app-lucky`，固定提交 `9449a52`）追加到末尾
-- 三条都用 `grep` 判重，重复执行不会写出第二条
+- 两条都用 `grep` 判重，重复执行不会写出第二条
 - 其余示例（`helloworld`、PassWall、kenzok8）保持注释状态
 - feed 名只能用字母数字下划线，带连字符会让 `feeds update` 报 `Syntax error in feeds.conf.default`
 
@@ -182,7 +179,7 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 
 - `luci-app-airoha-npu`（AN758x 平台专用，失败打 `::error::`）
 
-`luci-app-lucky`、`luci-app-mosdns`、`luci-app-mosdns-panel` 都由 `add-feed-sources.sh` 处理的 feed 提供，不走本脚本。
+`luci-app-lucky`、`luci-app-mosdns` 都由 `add-feed-sources.sh` 处理的 feed 提供，不走本脚本。
 
 ### `set-firmware-defaults.sh`
 
@@ -199,7 +196,7 @@ feeds 安装**后**、`make defconfig` **前**执行，clone 不是 feed 格式�
 
 本仓库不带 `feeds.conf.default`，基础 feeds 用源码分支自带的那份。源码 `master` 分支含 `pon_drivers`（Airoha PON 硬件驱动）与 `pon_userspace`（LuCI/ponctl/pond 等用户空间工具）两个 feed，指向上游 `pbs05/openwrt-pon-drivers`、`pbs05/openwrt-pon-userspace`。
 
-默认 feed 的源只改源码仓库那一处；第三方/编译期增量 feed（当前是 `mosdns`、`mosdns_panel`、`lucky`）只在 `add-feed-sources.sh` 增删，不写进源码仓库，两边不要互相掺。若确需整体换源，在本仓库根目录新建 `feeds.conf.default`，工作流会 `mv` 到源码目录并计入 `dl/` 缓存 key。
+默认 feed 的源只改源码仓库那一处；第三方/编译期增量 feed（当前是 `mosdns`、`lucky`）只在 `add-feed-sources.sh` 增删，不写进源码仓库，两边不要互相掺。若确需整体换源，在本仓库根目录新建 `feeds.conf.default`，工作流会 `mv` 到源码目录并计入 `dl/` 缓存 key。
 
 ## 云编译
 
@@ -262,7 +259,7 @@ sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_en
 git clone --depth 1 -b master https://github.com/DenzelVincent/ponwrt.git
 cd ponwrt
 
-# 增删第三方 feed (mosdns / mosdns_panel / lucky 都由编译仓库的 add-feed-sources.sh 统一处理，必须在 feeds update 之前执行)
+# 增删第三方 feed (mosdns / lucky 都由编译仓库的 add-feed-sources.sh 统一处理，必须在 feeds update 之前执行)
 sh /path/to/ImmortalWrt-firmware-build/add-feed-sources.sh
 
 # 更新并安装 feeds

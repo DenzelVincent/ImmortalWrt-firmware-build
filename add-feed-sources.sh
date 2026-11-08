@@ -21,7 +21,7 @@
 # 【必须插在 src-git packages 之前】immortalwrt/packages 至今仍有 net/mosdns (5.3.3),
 # 而 scripts/feeds 的 install_src 对同名包只认第一个声明的 feed ($installed{$name} 真即跳过)。
 # packages 在前的后果: 装成官方那份 —— 它没有 stats_api / query log / adblock_set 等
-# 二十多个补丁, luci-app-mosdns 的统计页和 mosdns-panel 的 /metrics 全部拿不到数据,
+# 二十多个补丁, luci-app-mosdns 的统计页 (/metrics) 拿不到数据,
 # 而且它自带的 /etc/init.d/mosdns 与 /etc/mosdns/config.yaml 会和 luci-app-mosdns 的同名文件相撞。
 # sed 的 i 命令按锚点插入, 锚点没匹配上就是静默不插, 故下面补一段行序断言。
 grep -q '^src-git mosdns ' feeds.conf.default || \
@@ -34,14 +34,6 @@ if [ -z "$mosdns_ln" ] || [ -z "$packages_ln" ] || [ "$mosdns_ln" -gt "$packages
   echo "::error::feeds.conf.default 里 src-git mosdns 必须存在且排在 src-git packages 之前 (实际: mosdns=$mosdns_ln packages=$packages_ln)"
   exit 1
 fi
-
-# MosDNS 监控面板 (MayflyDestiny) —— 在 LuCI 的 MosDNS 菜单下多一个「面板」标签页,
-# 看缓存命中率环形图、实时筛日志、清缓存/恢复 dump, 数据源是 mosdns 的 API 端口 (默认 9091)。
-# 仓库根下是 luci-app-mosdns-panel/ 一个包目录 (img/ 与 yaml/ 里没有 Makefile, scripts/feeds 扫不到、自动忽略),
-# 可直接作为 feed; 与 packages 无同名包, 追加到末尾即可。feed 名用下划线 mosdns_panel, 连字符见文件头约束。
-# 它是 Lua 应用, 但 luci.mk 检测到 luasrc/ 会自动补 +luci-lua-runtime, 依赖不用手写。
-grep -q '^src-git mosdns_panel ' feeds.conf.default || \
-  echo 'src-git mosdns_panel https://github.com/MayflyDestiny/luci-app-mosdns-panel.git^526ad2afe86b410e472b6f9c311f960324a68fbd' >>feeds.conf.default
 
 # Lucky 大吉 (lucky 核心 + LuCI 界面：IPv6 端口转发 / DDNS / 反向代理)
 # 仓库根下是 lucky/ 与 luci-app-lucky/ 两个包目录，可直接作为 feed 扫描；
