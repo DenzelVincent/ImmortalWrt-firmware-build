@@ -6,5 +6,5 @@
 # 注意: 本脚本被本分支各编译目标共用,
 #       改动对所有产出同时生效; 只想给某台设备单独设默认值时, 先想清楚这个共用前提。
 
-# Modify default IP (取消注释并修改为你需要的地址)
+# Modify default IP (生效中: 把 192.168.1.1 改成 10.0.0.1, 恢复原生默认就注释掉下一行)
 sed -i 's/192.168.1.1/10.0.0.1/g' package/base-files/files/bin/config_generate
