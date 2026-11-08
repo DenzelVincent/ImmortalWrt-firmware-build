@@ -28,11 +28,6 @@ on:
         description: 编译成功后创建 GitHub Release（默认关闭，关闭时只保留 artifact）
         type: boolean
         default: false
-      # 自建 feed 源开关：门控 Stage feed repositories / pages 两个 job；开启前需把仓库 Pages Source 设为 GitHub Actions
-      publish_feeds:
-        description: 把自定义 feed 的 apk 仓库发布到本仓库 Pages（需先在 Settings→Pages 选 GitHub Actions）
-        type: boolean
-        default: false
 
 env:
   # 源码仓库地址
@@ -45,14 +40,11 @@ env:
   # 目标设备和子目标（编译产物路径使用）
   DEVICE_NAME: XG-040G-MD
   SUBTARGET: an7581
-  # 三个自定义脚本 = 流程里的三个插入点，执行阶段见各行注释
+  # 两个自定义脚本 = 流程里的两个插入点，执行阶段见各行注释
   # 1) ./scripts/feeds update -a 之前 —— 增删增量 feed 源（mosdns / lucky / airoha_npu）
   SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
   # 2) make defconfig 之后 —— 改固件出厂默认值 (默认 IP、DHCP 等)
   SCRIPT_SET_FIRMWARE_DEFAULTS: set-firmware-defaults.sh
-  # 3) 编译完成之后、上传 Pages 之前 —— 把各 feed 的签名仓库拷成站点目录并与出厂源对账
-  SCRIPT_PUBLISH_FEED_REPOS: publish-feed-repos.sh
-  # 发布集（哪些 feed 上 Pages）的唯一事实来源是 files/etc/apk/repositories.d/customfeeds.list，两个发布脚本都逐条解析它
   # 编译环境时区
   TZ: Asia/Shanghai
   # 可选覆盖：本仓库根存在该文件时才覆盖源码自带 feeds
@@ -65,7 +57,6 @@ jobs:
 
     permissions:
       actions: write    # 允许上传编译产物 artifact
-      pages: write      # 允许把 feed 仓库暂存成 Pages artifact（publish_feeds 勾选时）
 
     steps:
     # ----------------------------------------------------------
@@ -199,21 +190,22 @@ jobs:
       run: cd openwrt && ./scripts/feeds install -a
 
     # ----------------------------------------------------------
-    # 步骤 9: 加载 APK 仓库签名密钥（Secret: PONWRT_APK_PRIVATE_KEY），勾选 publish_feeds 时缺密钥必须失败
+    # 步骤 9: 还原 APK 仓库签名私钥（Secret: PONWRT_APK_PRIVATE_KEY），缺失即失败
     # ----------------------------------------------------------
     - name: Load repository signing key
       working-directory: openwrt
       env:
         PONWRT_APK_PRIVATE_KEY: ${{ secrets.PONWRT_APK_PRIVATE_KEY }}
       run: |
-        if [ -n "$PONWRT_APK_PRIVATE_KEY" ]; then
-          umask 077
-          printf '%s\n' "$PONWRT_APK_PRIVATE_KEY" > private-key.pem
-          openssl ec -in private-key.pem -pubout -out public-key.pem
-        elif [ '${{ inputs.publish_feeds }}' = 'true' ]; then
-          echo "::error::勾选了 publish_feeds 但未配置 Secret PONWRT_APK_PRIVATE_KEY，仓库会用随机密钥签名、设备端不认；请配置 Secret 或取消勾选"
+        # 缺 Secret 必须在这里失败：私钥不存在时构建系统会现造一把随机的，镜像 /etc/apk/keys/
+        # 里的公钥就不认 Pages 上用固定私钥签的 feed 仓库，设备端 apk add 全变 unspec
+        [ -n "$PONWRT_APK_PRIVATE_KEY" ] || {
+          echo "::error::未配置 Secret PONWRT_APK_PRIVATE_KEY，产出的固件不认自建 feed 源的签名"
           exit 1
-        fi
+        }
+        umask 077
+        printf '%s\n' "$PONWRT_APK_PRIVATE_KEY" > private-key.pem
+        openssl ec -in private-key.pem -pubout -out public-key.pem
 
     # ----------------------------------------------------------
     # 步骤 10: 复制设备配置并追加 CONFIG_CCACHE=y，make defconfig 后自检并执行出厂默认值脚本
@@ -290,26 +282,6 @@ jobs:
         name: ImmortalWrt_${{ env.FW_VERSION }}_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: release/${{ env.DEVICE }}
 
-    # ----------------------------------------------------------
-    # 步骤 16: 执行 publish-feed-repos.sh 把各 feed 已签名的仓库拷成 Pages 站点目录
-    # ----------------------------------------------------------
-    - name: Stage feed repositories
-      id: feeds
-      if: inputs.publish_feeds && !cancelled()
-      run: |
-        chmod +x $SCRIPT_PUBLISH_FEED_REPOS
-        sh $SCRIPT_PUBLISH_FEED_REPOS
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    # ----------------------------------------------------------
-    # 步骤 17: 站点目录暂存成 Pages artifact（真正部署由 pages job 执行）
-    # ----------------------------------------------------------
-    - name: Upload Pages artifact
-      if: steps.feeds.outputs.status == 'success' && !cancelled()
-      uses: actions/upload-pages-artifact@v4
-      with:
-        path: feed-site
-
   # ------------------------------------------------------------
   # Release 发布 job：编译成功后打包上传 Release，并清理旧 runs / Releases
   # 由 workflow_dispatch 的 release 开关控制，默认关闭；关闭时只保留 artifact
@@ -327,7 +299,7 @@ jobs:
     steps:
 
       # ----------------------------------------------------------
-      # 步骤 1: 下载本次 run 的固件 artifact（pattern 排除 Pages 暂存件，每个解压到同名子目录）
+      # 步骤 1: 下载本次 run 的固件 artifact（按 artifact 名前缀取，命名约定见 build 步骤 15）
       # ----------------------------------------------------------
       - name: Download firmware artifacts
         uses: actions/download-artifact@v4
@@ -404,30 +376,3 @@ jobs:
           delete_tag_pattern: _XG-040G-MD_
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ------------------------------------------------------------
-  # Pages 发布 job：把 build 暂存的 feed 仓库部署成设备可访问的自建源
-  # 由 workflow_dispatch 的 publish_feeds 开关门控，默认关闭；开启前需把仓库 Pages Source 设为 GitHub Actions
-  # ------------------------------------------------------------
-  pages:
-    name: Publish feed repos
-    runs-on: ubuntu-latest
-    needs: build
-    if: needs.build.result == 'success' && !cancelled() && inputs.publish_feeds
-
-    permissions:
-      pages: write      # 允许部署 Pages 站点
-      id-token: write   # 部署要用 OIDC token 向 GitHub 换 Pages 部署凭证
-
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
-
-      # ----------------------------------------------------------
-      # 步骤 1: 部署 build 步骤 17 暂存的 Pages artifact（整站替换，站点上只留最近一趟编译的包）
-      # ----------------------------------------------------------
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4

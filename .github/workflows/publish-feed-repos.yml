@@ -1,7 +1,7 @@
 # ============================================================
 # 自建 feed 源发布工作流 (AN7581 / ImmortalWrt)
 # 用途: 只编译发布集里的 app 包并签名成 apk 仓库发布到本仓库 Pages，不产出固件镜像
-#       （整镜像那趟顺带发布见 build-an7581-immortalwrt.yml 的 publish_feeds 开关）
+#       自建 feed 源的唯一发布入口；固件编译工作流只产镜像，不碰 Pages
 # 发布清单: files/etc/apk/repositories.d/customfeeds.list (出厂源清单即发布清单)
 # 触发方式: 手动触发 (workflow_dispatch)
 # ============================================================

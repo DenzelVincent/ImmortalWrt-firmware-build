@@ -134,17 +134,17 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 
 ```
 ├── .github/workflows/
-│   ├── build-an7581-immortalwrt.yml       # AN7581 XGS-PON 固件编译（勾选 publish_feeds 时顺带发布自建源）
-│   └── publish-feed-repos.yml             # 只编 app 并发布自建源，不产固件镜像
+│   ├── build-an7581-immortalwrt.yml       # AN7581 XGS-PON 固件编译（只产镜像，不发布自建源）
+│   └── publish-feed-repos.yml             # 只编 app 并发布自建源，不产固件镜像（自建源的唯一发布入口）
 ├── an7581.config                  # 云编译配置（两个工作流的 CONFIG_FILE）
 ├── configs/                       # 从源码仓库拷来的参考配置，工作流不读取
 │   ├── an7581.config              # AN7581 全设备配置（menuconfig 完整展开结果）
 │   ├── an7583.config              # AN7583 全设备配置（menuconfig 完整展开结果，本分支无对应编译目标）
 │   └── release.config             # 发布配置增量
-├── add-feed-sources.sh            # 插入点 1：feeds update 之前，增删第三方 feed 源
-├── set-firmware-defaults.sh       # 插入点 2：make defconfig 之后，改固件出厂默认值（只有固件编译工作流用）
-├── build-feed-packages.sh         # 插入点 3：只编发布集里被选中的 feed 包（只有发布工作流用）
-├── publish-feed-repos.sh          # 插入点 4：把各 feed 的已签名仓库拷成 Pages 站点
+├── add-feed-sources.sh            # 插入点 1（固件编译工作流）：feeds update 之前，增删第三方 feed 源
+├── set-firmware-defaults.sh       # 插入点 2（固件编译工作流）：make defconfig 之后，改固件出厂默认值
+├── build-feed-packages.sh         # 插入点 3（发布工作流）：只编发布集里被选中的 feed 包
+├── publish-feed-repos.sh          # 插入点 4（发布工作流）：把各 feed 的已签名仓库拷成 Pages 站点
 └── files/                         # 固件出厂预置文件，工作流整目录 mv 进 openwrt/，rootfs 生成时覆盖同名文件
     └── etc/apk/repositories.d/customfeeds.list   # 设备端自建源清单，指向本仓库 Pages，同时是发布清单
 ```
@@ -246,11 +246,10 @@ feeds 更新**前**执行，改 `feeds.conf.default`。源码仓库（PonWrt）�
    后者由 apk 包安装并登记为 conffile，sysupgrade 保留。自建源一律走后者。
 
 于是分工是：默认源=官方包（可正常 `apk upgrade`），自建源=本项目 feed，站点地址即
-`files/etc/apk/repositories.d/customfeeds.list` 里那几条。发布有两个入口，产出的仓库同一把密钥签名：
-
-- 固件编译工作流 `build-an7581-immortalwrt.yml` 勾选 `publish_feeds`：整镜像那趟顺带发布，包与镜像同一天基线
-- 独立的 `publish-feed-repos.yml`：不产镜像，只编发布集里的 app 包并发布。app 源码更新后单独发版走这条，
-  但 feed 锁的是 tag，所以顺序是「app 仓库 bump 版本号 → 打 tag → 推 → 改 `add-feed-sources.sh` 的 pin → 再跑本工作流」
+`files/etc/apk/repositories.d/customfeeds.list` 里那几条。自建源只有 `publish-feed-repos.yml` 一个发布入口，
+固件编译工作流不碰 Pages；两趟用的是同一份 `an7581.config`、同一对 cache key、同一把签名私钥，
+所以设备端认这个源。app 源码更新的发版顺序是「app 仓库 bump 版本号 → 打新 tag → 推 →
+改 `add-feed-sources.sh` 的 pin → 跑 `publish-feed-repos.yml`」，只改 pin 不跑它就只进镜像、不上源。
 
 **升级口径：只手工装单个包，不跑全局升级。** 官方源是每日 snapshot，`apk upgrade -a` 会把
 `luci-base`、`libc` 这些依赖拉到与固件编译那天不一致的版本，而自建站点上的包是按编译那天的基线做的。
@@ -285,25 +284,24 @@ apk add luci-app-lucky                              # 只列出该包及其缺�
 5. 缓存 `dl/` 下载目录与 `openwrt/.ccache`（默认启用；key = 工作流 env 里的 `CONFIG_NAME` + `-dl-`/`-ccache-` + 配置内容哈希；`CONFIG_NAME` 与 `CONFIG_FILE` 成对定义，清理开关见下方"触发方式"）
 6. 加载 feeds 源（本仓库不带 `feeds.conf.default`，用源码分支自带的那份），执行 `add-feed-sources.sh`
 7. 更新并安装 feeds
-8. 加载 APK 仓库签名密钥（可选；但勾选 `publish_feeds` 时缺 Secret 直接失败，见下面发布工作流同条注释）
+8. 还原 APK 仓库签名私钥（Secret `PONWRT_APK_PRIVATE_KEY` 必填，缺失直接失败：镜像 `/etc/apk/keys/` 里的公钥必须认自建源的签名）
 9. 将工作流 `CONFIG_FILE` 指向的那份配置复制为 `openwrt/.config`，无条件追加 `CONFIG_CCACHE=y` → `make defconfig` 展开（展开后自检这一行还在）
 10. 执行 `set-firmware-defaults.sh` 修改固件出厂默认参数
 11. 预下载软件包源码 (`make download`)
 12. 编译固件：全并发 → 同级并发重试 → 才降级 `make -j1 V=s`（ccache 取自步骤 9 写入的 .config，命令行不带参数）
 13. 收集固件镜像到 `release/<设备>/`，上传 artifact，打包 `tar.zst` 发布到 GitHub Release
-14. 执行 `publish-feed-repos.sh` 按出厂 `customfeeds.list` 逐条把各 feed 的已签名仓库拷成 `feed-site/`，暂存成 Pages artifact（仅勾选 `publish_feeds` 时）
-15. `pages` job 把该站点部署到 GitHub Pages（仅勾选 `publish_feeds` 时；Pages Source 须已设为 GitHub Actions）
-16. 清理旧 workflow runs (保留 7 天 / 至少 3 条) 和旧 Release (保留最近 3 个)
+14. 清理旧 workflow runs (保留 7 天 / 至少 3 条) 和旧 Release (保留最近 3 个)
 
-`publish-feed-repos.yml`（只发 app 仓库，不产镜像）：
+`publish-feed-repos.yml`（自建源的唯一发布入口，只编 app 并发布、不产镜像）：
 
 1. 步骤 1–7 与上面完全相同（同一份源码分支、同一份 `an7581.config`、同一对 cache key，共用缓存）
-2. 还原签名私钥，这里**必须**配置 `PONWRT_APK_PRIVATE_KEY`：私钥缺失时构建系统会自己
-   `ecparam -genkey` 造一把随机的，索引照签、步骤照绿，但固件里的公钥不认它
+2. 还原签名私钥（同样必填）：私钥缺失时构建系统会自己 `ecparam -genkey` 造一把随机的，
+   索引照签、步骤照绿，但固件里的公钥不认它
 3. 复制配置 → `make defconfig`（不 `mv files/`、不跑 `set-firmware-defaults.sh`：那是镜像的出厂 overlay）
 4. `make download` → 显式编一次 host 版 `apk` 工具（单包 compile 与 `package/index` 都没把它列为前提）
 5. `build-feed-packages.sh` 只编发布集里被选中的包 → `make package/index` 生成签名索引
 6. `publish-feed-repos.sh` 拷成 `feed-site/` 并对账 → `pages` job 整站部署
+   （首次运行前要在 仓库 Settings → Pages 把 Source 设为 **GitHub Actions**；没设好就失败，不静默跳过）
 
 ### 触发方式
 
@@ -316,11 +314,12 @@ apk add luci-app-lucky                              # 只列出该包及其缺�
   勾选；这些字段不在缓存 key 的哈希范围内，改了不会自动失效。
 - `clean_ccache` — 先清空 `openwrt/.ccache` 编译对象缓存再编译。怀疑复用到了不对的产物时勾选。
 
-只有固件编译工作流有的发布开关：
+只有固件编译工作流有的开关：
 
 - `release` — 编译成功后创建 GitHub Release（只发固件镜像压缩包），默认关闭，关闭时只保留 artifact。
-- `publish_feeds` — 整镜像那趟顺带把各 feed 的 apk 仓库发布到本仓库 Pages，默认关闭。
-  首次勾选前要在 仓库 Settings → Pages 把 Source 设为 **GitHub Actions**；没设好就失败，不静默跳过。
+
+自建 feed 源不再由固件编译工作流发布：固件那趟只管镜像，源的内容变化一律靠
+`publish-feed-repos.yml` 显式触发。
 
 `publish-feed-repos.yml` 本身就是发布动作，没有额外的发布开关；但 feed 锁的是 tag，所以「app 源码更新 →
 直接跑这一条」并不成立，顺序是 app 仓库 bump `PKG_VERSION`/`PKG_RELEASE` → 打新 tag → 推 → 改
