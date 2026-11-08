@@ -10,3 +10,6 @@ Thumbs.db
 
 # 临时文件
 tmp/
+
+# APK 签名私钥的本地副本，不入库（Secret 值由它填）
+secretKeys/
