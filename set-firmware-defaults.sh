@@ -1,15 +1,10 @@
 #!/bin/sh
-# 阶段: make defconfig 之后、make download 与正式编译之前
-#       (工作流步骤 "Load custom config" 末尾, cwd = openwrt/)
-# 用途: 改用固件的出厂默认值。改的是源码树里会被装进 rootfs 的文件, 构建期改一次即随固件走,
-#       用户侧恢复出厂或 sysupgrade -n 之后仍是这里的值 —— 这是它和"运行时 uci 改"的区别。
+# 阶段: make defconfig 之后、make download 与正式编译之前 (工作流步骤 "Load custom config" 末尾, cwd = openwrt/)
+# 用途: 改固件的出厂默认值 —— 改的是会被装进 rootfs 的源码文件, 恢复出厂和 sysupgrade -n 后仍是这里的值
 
 # Modify default IP
 sed -i 's/192.168.1.1/10.0.0.1/g' package/base-files/files/bin/config_generate
 
-# Set DHCP IP Address start and end
-# 默认无需显式配置: dnsmasq 包模板 package/network/services/dnsmasq/files/dhcp.conf
-# （由 Makefile 装成 /etc/config/dhcp）出厂值为 start=100 / limit=150 / leasetime=12h，
-# 即地址池 .100-.249 共 150 个。下面两行的作用只是把池扩满整个 /24（.2-.254）。
+# Set DHCP IP Address start and end (dnsmasq 出厂模板已是 start=100 / limit=150, 取消注释可把地址池扩满 /24)
 #sed -i "s/option start.*/option start \'2\'/g" package/network/services/dnsmasq/files/dhcp.conf
 #sed -i "s/option limit.*/option limit \'253\'/g" package/network/services/dnsmasq/files/dhcp.conf
