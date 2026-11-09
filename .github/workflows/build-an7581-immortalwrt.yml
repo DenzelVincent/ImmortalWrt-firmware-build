@@ -40,10 +40,12 @@ env:
   # 目标设备和子目标（编译产物路径使用）
   DEVICE_NAME: XG-040G-MD
   SUBTARGET: an7581
-  # 两个自定义脚本 = 流程里的两个插入点，执行阶段见各行注释
+  # 三个自定义脚本 = 流程里的三个插入点，执行阶段见各行注释
   # 1) ./scripts/feeds update -a 之前 —— 增删增量 feed 源（mosdns / lucky / airoha_npu）
   SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
-  # 2) make defconfig 之后 —— 改固件出厂默认值 (默认 IP、DHCP 等)
+  # 2) ./scripts/feeds install -a 之后 —— 修 feed 包里 LuCI 表单「值等于默认值就删」的缺陷
+  SCRIPT_PATCH_FEED_PACKAGES: patch-feed-packages.sh
+  # 3) make defconfig 之后 —— 改固件出厂默认值 (默认 IP、DHCP 等)
   SCRIPT_SET_FIRMWARE_DEFAULTS: set-firmware-defaults.sh
   # 编译环境时区
   TZ: Asia/Shanghai
@@ -184,10 +186,16 @@ jobs:
       run: cd openwrt && ./scripts/feeds update -a
 
     # ----------------------------------------------------------
-    # 步骤 8: 安装 feeds 到编译环境
+    # 步骤 8: 安装 feeds 到编译环境，再按脚本修 feed 包里的 LuCI 表单缺陷
     # ----------------------------------------------------------
+    # 必须排在 install 之后：package/feeds/<feed>/<pkg> 是指向 feeds/<name>/ 的软链，
+    # 而 ./scripts/feeds update -a 会把补丁连根冲掉，所以顺序固定 update → install → 打补丁
     - name: Install feeds
-      run: cd openwrt && ./scripts/feeds install -a
+      run: |
+        chmod +x $SCRIPT_PATCH_FEED_PACKAGES
+        cd openwrt
+        ./scripts/feeds install -a
+        $GITHUB_WORKSPACE/$SCRIPT_PATCH_FEED_PACKAGES
 
     # ----------------------------------------------------------
     # 步骤 9: 还原 APK 仓库签名私钥（Secret: PONWRT_APK_PRIVATE_KEY），缺失即失败
