@@ -227,19 +227,27 @@ jobs:
         make download -j8 V=11
 
     # ----------------------------------------------------------
-    # 步骤 12: 编出 host 版 apk 工具（打包与生成索引都调它，本工作流不编镜像不会顺带带出来）
+    # 步骤 12: 先编 tools 与交叉工具链（单包 compile 不拉它们，缺 staging_dir/host/bin 下的构建期二进制会秒挂）
+    # ----------------------------------------------------------
+    - name: Build host tools and toolchain
+      run: |
+        cd openwrt
+        make prepare -j$(nproc) || make -j1 V=s
+
+    # ----------------------------------------------------------
+    # 步骤 13: 编出 host 版 apk 工具（不编镜像不会顺带带出来；带 V=s，否则子 make 的报错会被重定向吞掉）
     # ----------------------------------------------------------
     - name: Build host apk tool
       run: |
         cd openwrt
-        make package/system/apk/compile
+        make package/system/apk/compile V=s
         [ -x staging_dir/host/bin/apk ] || {
           echo "::error::staging_dir/host/bin/apk 不存在，后面 mkpkg/mkndx 都会失败"
           exit 1
         }
 
     # ----------------------------------------------------------
-    # 步骤 13: 执行 build-feed-packages.sh 只编发布集里被 .config 选中的 feed 包
+    # 步骤 14: 执行 build-feed-packages.sh 只编发布集里被 .config 选中的 feed 包
     # ----------------------------------------------------------
     - name: Compile feed packages
       run: |
@@ -247,15 +255,15 @@ jobs:
         sh $SCRIPT_BUILD_FEED_PACKAGES openwrt
 
     # ----------------------------------------------------------
-    # 步骤 14: 生成并签名各 feed 的 packages.adb（apk mkndx --sign private-key.pem）
+    # 步骤 15: 生成并签名各 feed 的 packages.adb（apk mkndx --sign private-key.pem）
     # ----------------------------------------------------------
     - name: Index repositories
       run: |
         cd openwrt
-        make package/index
+        make package/index || make package/index V=s
 
     # ----------------------------------------------------------
-    # 步骤 15: 执行 publish-feed-repos.sh 把签名仓库拷成 Pages 站点目录并与出厂清单对账
+    # 步骤 16: 执行 publish-feed-repos.sh 把签名仓库拷成 Pages 站点目录并与出厂清单对账
     # ----------------------------------------------------------
     - name: Stage feed repositories
       id: feeds
@@ -265,7 +273,7 @@ jobs:
         echo "status=success" >> $GITHUB_OUTPUT
 
     # ----------------------------------------------------------
-    # 步骤 16: 检查站点目录内容与磁盘使用情况
+    # 步骤 17: 检查站点目录内容与磁盘使用情况
     # ----------------------------------------------------------
     - name: Check site contents
       if: (!cancelled())
@@ -274,7 +282,7 @@ jobs:
         df -hT
 
     # ----------------------------------------------------------
-    # 步骤 17: 站点目录暂存成 Pages artifact（真正部署由 pages job 执行）
+    # 步骤 18: 站点目录暂存成 Pages artifact（真正部署由 pages job 执行）
     # ----------------------------------------------------------
     - name: Upload Pages artifact
       if: steps.feeds.outputs.status == 'success' && !cancelled()
