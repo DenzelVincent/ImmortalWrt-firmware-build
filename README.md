@@ -129,6 +129,10 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 | `kmod-phy-airoha-en8811h` | Airoha EN8811H 2.5G PHY 驱动 |
 | `kmod-phy-maxlinear` / `kmod-phy-realtek` | MaxLinear / Realtek PHY 驱动 |
 | `kmod-airoha-en7572` / `kmod-airoha-xpon` / `kmod-airoha-paged-bosa` | Airoha PON 驱动 |
+| `kmod-zram` / `zram-swap` | zram 压缩交换（438 MB 无 swap 的兜底，把 OOM 随机杀进程换成可控换页） |
+
+> `CONFIG_ZRAM=m` 由源码仓库的 `scripts/package-metadata.pl kconfig` 在配置阶段自动注入，不需要改 `target/linux/airoha/an7581/config-6.18`。
+> zram 容量不写在配置里：不设 `zram_size_mb` 时 `/etc/init.d/zram` 按 `MemTotal/2048` 取到 214 MB，刷机后要 `uci set system.@system[0].zram_size_mb='64'`。
 
 ## 仓库结构
 
