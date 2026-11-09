@@ -92,7 +92,7 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 > `luci-app-lucky` 由 `add-feed-sources.sh` 追加的 `lucky` feed（pin `b07f65c…`，lucky 3.5.0-r1 / luci-app-lucky 3.0.0-r31）提供，随 feeds 安装自动就位；
 > `luci-app-mosdns` 由同一脚本插入的 `mosdns` feed 提供（pin `dbdd91a…` = tag `v5.3.4-r15`），
 > 其中 `mosdns` feed 有行序硬约束（必须排在 `src-git packages` 之前，理由见脚本注释）；
-> `luci-app-airoha-npu` 由同一脚本追加的 `airoha_npu` feed 提供（本仓库自维护，pin `390d862…` = tag `v1.2.2`，
+> `luci-app-airoha-npu` 由同一脚本追加的 `airoha_npu` feed 提供（本仓库自维护，pin `2825433…` = tag `v1.2.2`，
 > 发版要走「bump 版本号 → 打 tag → 把 tag 的 commit sha 写进 pin」，理由见下面 `add-feed-sources.sh` 一节）。
 > 顺序反了 kconfig 不报错，只会静默不打包该界面；本地编译同样要先跑 `add-feed-sources.sh` 再 `./scripts/feeds update -a`（见下面"本地编译"一节）。
 >
@@ -189,7 +189,7 @@ feeds 更新**前**执行，改 `feeds.conf.default`。源码仓库（PonWrt）�
 - `lucky` feed（`gdy666/luci-app-lucky`，pin `b07f65c28bb5…`，lucky 3.5.0-r1 / luci-app-lucky 3.0.0-r31）追加到末尾。
   作者的 `v3.3.0`~`v3.3.3` 四个标签全部指向同一个旧 commit（那份 Makefile 里还是 lucky 2.27.2），tag 名与包内容已脱钩，
   所以这条只按 sha 锁内容，不追求对应某个 tag 名。
-- `airoha_npu` feed（`DenzelVincent/luci-app-airoha-npu`，pin `390d862b62eb…` = tag `v1.2.2`）追加到末尾。自维护仓库照常打 tag，
+- `airoha_npu` feed（`DenzelVincent/luci-app-airoha-npu`，pin `28254333771d…` = tag `v1.2.2`）追加到末尾。自维护仓库照常打 tag，
   要的是「镜像里预装的那份」与「Pages 发布的那份」必然同源。发版顺序：app 仓库提交 → 推 `main` → 打 tag →
   把该 tag 的 commit sha 写进这里的 pin → 跑 `publish-feed-repos.yml`；打 tag 时必须同步 bump `PKG_VERSION` 或 `PKG_RELEASE`，
   apk 只比版本号不比内容，版本号不动设备端 `apk add` 会判定"已满足"、不升级
