@@ -34,9 +34,9 @@ fi
 grep -q '^src-git lucky ' feeds.conf.default || \
   echo 'src-git lucky https://github.com/gdy666/luci-app-lucky.git^b07f65c28bb5fa3da1fea4b8af5ce24a1488e79a' >>feeds.conf.default
 
-# Airoha NPU 管理界面 (自维护)，pin = tag v1.2.1: 打 tag 必须同步 bump PKG_VERSION/PKG_RELEASE, apk 只比版本号不比内容
+# Airoha NPU 管理界面 (自维护)，pin = tag v1.2.2: 打 tag 必须同步 bump PKG_VERSION/PKG_RELEASE, apk 只比版本号不比内容
 grep -q '^src-git airoha_npu ' feeds.conf.default || \
-  echo 'src-git airoha_npu https://github.com/DenzelVincent/luci-app-airoha-npu.git^b24b50a1de1a72f237c2307016b98a065976b9c6' >>feeds.conf.default
+  echo 'src-git airoha_npu https://github.com/DenzelVincent/luci-app-airoha-npu.git^390d862b62eb297cb4ee3d466cd174c6565fb0f4' >>feeds.conf.default
 
 # 断言三条增量 feed 的 ^ref 都是 40 位十六进制 sha —— 手写成 tag 名或短 sha 会红在 feeds update, 在这里先拦住
 bad=""
