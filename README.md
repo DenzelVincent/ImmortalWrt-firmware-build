@@ -98,6 +98,8 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 >
 > MosDNS 出厂是**关闭**状态（`/etc/config/mosdns` 里 `enabled '0'`、监听 `5335`），不会开机就占住 53 端口；
 > 要用时在 LuCI「服务 → MosDNS」里自行启用，统计页读的是 mosdns 的 API 端口，默认 `9091`，开箱即用。
+> 「高级设置 → 启用 DNS 广告过滤」这一项依赖 `patch-feed-packages.sh`（见下面"脚本说明"）：上游页面没给
+> `ad_source` 写 `rmempty = false`，保留默认值保存时键不落 UCI，而空 `ad_source` 会让 mosdns 开机崩溃循环。
 >
 > 这些 app 的 feed 官方站不托管，默认源列表里已注释掉；设备端手工升级见「设备端软件源与 app 升级」一节。
 
@@ -145,10 +147,11 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 │   ├── an7581.config              # AN7581 全设备配置（menuconfig 完整展开结果）
 │   ├── an7583.config              # AN7583 全设备配置（menuconfig 完整展开结果，本分支无对应编译目标）
 │   └── release.config             # 发布配置增量
-├── add-feed-sources.sh            # 插入点 1（固件编译工作流）：feeds update 之前，增删第三方 feed 源
-├── set-firmware-defaults.sh       # 插入点 2（固件编译工作流）：make defconfig 之后，改固件出厂默认值
-├── build-feed-packages.sh         # 插入点 3（发布工作流）：只编发布集里被选中的 feed 包
-├── publish-feed-repos.sh          # 插入点 4（发布工作流）：把各 feed 的已签名仓库拷成 Pages 站点
+├── add-feed-sources.sh            # 插入点 1（两个工作流）：feeds update 之前，增删第三方 feed 源
+├── patch-feed-packages.sh         # 插入点 2（两个工作流）：feeds install 之后，修 feed 包里的 LuCI 表单缺陷
+├── set-firmware-defaults.sh       # 插入点 3（固件编译工作流）：make defconfig 之后，改固件出厂默认值
+├── build-feed-packages.sh         # 插入点 4（发布工作流）：只编发布集里被选中的 feed 包
+├── publish-feed-repos.sh          # 插入点 5（发布工作流）：把各 feed 的已签名仓库拷成 Pages 站点
 └── files/                         # 固件出厂预置文件，工作流整目录 mv 进 openwrt/，rootfs 生成时覆盖同名文件
     └── etc/apk/repositories.d/customfeeds.list   # 设备端自建源清单，指向本仓库 Pages，同时是发布清单
 ```
@@ -165,10 +168,10 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 
 ## 脚本说明
 
-四个脚本对应编译流程里的四个插入点，工作流按 `env` 段的 `SCRIPT_ADD_FEED_SOURCES` /
-`SCRIPT_SET_FIRMWARE_DEFAULTS` / `SCRIPT_BUILD_FEED_PACKAGES` / `SCRIPT_PUBLISH_FEED_REPOS`
-调用（固件编译工作流用 1/2/4，发布工作流用 1/3/4）。文件名写"做什么"，执行阶段写在各脚本的头注释里；
-各编译目标共用同一批脚本，改动对所有产出生效。
+五个脚本对应编译流程里的五个插入点，工作流按 `env` 段的 `SCRIPT_ADD_FEED_SOURCES` /
+`SCRIPT_PATCH_FEED_PACKAGES` / `SCRIPT_SET_FIRMWARE_DEFAULTS` / `SCRIPT_BUILD_FEED_PACKAGES` /
+`SCRIPT_PUBLISH_FEED_REPOS` 调用（固件编译工作流用 1/2/3，发布工作流用 1/2/4/5）。文件名写"做什么"，
+执行阶段写在各脚本的头注释里；各编译目标共用同一批脚本，改动对所有产出生效。
 
 ### `add-feed-sources.sh`
 
@@ -196,6 +199,32 @@ feeds 更新**前**执行，改 `feeds.conf.default`。源码仓库（PonWrt）�
 - 当 feed 用的仓库必须是 **feed 形态**：包本体放在仓库里一层子目录（如 `luci-app-airoha-npu/`），
   不能直接摊在仓库根。`include/scan.mk` 用 `find -mindepth 1` 扫包，会跳过根目录那份 Makefile，
   结果是 `feeds update` 报成功、扫出 0 个包、`install -a` 什么都不装，`make defconfig` 静默丢界面。
+
+### `patch-feed-packages.sh`
+
+`feeds install -a` **后**、`make defconfig` **前**执行，对 feed 包源码就地打两处补丁，治同一个上游缺陷。
+
+- 根因不在 mosdns：openwrt/luci 的 `974b5864e05e` 往 `CBIAbstractValue.parse()` 的空值判据里加了
+  `fval == this.default`，于是"提交值等于控件默认值"和"留空"共用一条 `remove()` 分支。这条判断排在
+  `!isEqual(cval, fval)` 之前，与 UCI 现值无关 —— **已经写进去的值，之后每次点"保存并应用"都被重新删一遍**
+- 补丁 1 给 `form.js` 只加一个前提 `&& !isEqual(cval, fval)`，即"UCI 现值确实不等于它"才允许删。
+  默认值仍不会多余落盘（写不写由第二个分支决定），`#8642` 的原意保住，受益面是全部 LuCI 页面
+- 但补丁 1 单独用不住：mosdns 的 `ad_source` 声明了 `o.default = 'geosite.dat'`，全新刷机后不动下拉框直接保存时
+  键压根不写，而 init 对空 `ad_source` 的兜底是 `/var/mosdns/disable-ads.txt` —— 该文件只在 `ad_source` 含
+  `geosite.dat` 时才由 `geo2txt` 生成，于是 adlist 插件 init 失败、开机崩溃循环（设备实测）。
+  全新刷机（UCI 无键）和"选了别的源又选回默认值"两种情况都是 `cval != fval`，照旧走 `remove()`
+- 补丁 2 因此给 `ad_source` 补 `o.rmempty = false;`，把"等于默认值即视为空"的捷径整个关掉，让默认值显式写进 UCI。
+  这不是我发明的新模式：app 里 `stats_collector`（`o.default = o.enabled`）本来就是这么写的
+- 只动这两处，不碰 `Flag.parse()`（5186 行有同款无条件 `remove()`）：布尔开关"无键=关"是约定，
+  且 mosdns 里 `default = enabled` 的选项都自带 `rmempty = false`，扩大改动面只会带来新的行为差异
+- 载体用内容锚 `sed` + 事后断言，不用 `.patch` 文件、不整文件覆盖：`src-git luci` 没带 `^ref`，每趟取
+  immortalwrt/luci 的 tip，基于上下文的 patch 下一提交就 apply 失败；整份覆盖则会在换 pin 时静默吃掉上游改动。
+  断言查的是"去空白后的危险写法必须不再存在"（与压缩产物同形态，设备端可用同一条串复核），
+  所以"我们打过"和"上游已修"都放行，只有"锚点失配而缺陷仍在"才让编译红；上游真修好后这一段可以直接删
+- 补丁落在 `feeds/<name>/` 本体：`package/feeds/<feed>/<pkg>` 只是 `scripts/feeds` 建的软链
+  （`ln -sf ../../../feeds/...`），所以再跑一次 `./scripts/feeds update -a` 会把补丁连根冲掉且不报错。
+  本地顺序固定 `feeds update -a` → `feeds install -a` → 本脚本
+- 发布工作流必须跑同一个脚本：`luci-app-mosdns` 在自建源里发布，那边漏打的话设备 `apk add`／升级会把未修的页面装回去
 
 ### `set-firmware-defaults.sh`
 
@@ -303,7 +332,7 @@ openssl ec -in private-key.pem -pubout -out public-key.pem
 4. 按工作流 `env.REPO_BRANCH` 克隆 ImmortalWrt 源码到 `/srcdir` (更大磁盘)
 5. 缓存 `dl/` 下载目录与 `openwrt/.ccache`（默认启用；key = 工作流 env 里的 `CONFIG_NAME` + `-dl-`/`-ccache-` + 配置内容哈希；`CONFIG_NAME` 与 `CONFIG_FILE` 成对定义，清理开关见下方"触发方式"）
 6. 加载 feeds 源（本仓库不带 `feeds.conf.default`，用源码分支自带的那份），执行 `add-feed-sources.sh`
-7. 更新并安装 feeds
+7. 更新并安装 feeds；装完后执行 `patch-feed-packages.sh` 修 feed 包里的 LuCI 表单缺陷（必须排在 install 之后，`feeds update` 会把补丁冲掉）
 8. 还原 APK 仓库签名私钥（Secret `PONWRT_APK_PRIVATE_KEY` 必填，缺失或格式非法直接失败：镜像 `/etc/apk/keys/` 里的公钥必须认自建源的签名，生成方式见上方"签名密钥"）
 9. 将工作流 `CONFIG_FILE` 指向的那份配置复制为 `openwrt/.config`，无条件追加 `CONFIG_CCACHE=y` → `make defconfig` 展开（展开后自检这一行还在）
 10. 执行 `set-firmware-defaults.sh` 修改固件出厂默认参数
@@ -360,6 +389,7 @@ commit sha 写进 `add-feed-sources.sh` 的 pin 并提交 → 再跑这条工作
 
 - 改某台设备的软件包和内核模块，改它自己那份配置（`an7581.config`）；`configs/` 下的参考配置改了不影响云编译，工作流不读它
 - 改默认 IP、DHCP 等参数改 `set-firmware-defaults.sh`，注意它对所有产出生效
+- 要修 feed 包源码里的上游缺陷（不是出厂值，是 LuCI 页面行为本身）改 `patch-feed-packages.sh`，两个工作流都会跑它
 - 换源码分支只改对应工作流 `env` 段的 `REPO_BRANCH`，本仓库的分支名不参与推导
 - 新增编译目标：复制一份工作流，改 `name:`、`REPO_BRANCH`、`CONFIG_FILE`、`CONFIG_NAME`、`DEVICE_NAME`、`SUBTARGET`，以及两处 cache key 里 `hashFiles` 的配置文件名（`CONFIG_NAME` 必须与现有各前缀互不为前缀）
 
@@ -386,6 +416,9 @@ sh /path/to/ImmortalWrt-firmware-build/add-feed-sources.sh
 # 带 ^ref 的 feed 在 scripts/feeds 里是"给了 ref 就不 update"，不删就还是旧 commit 的内容）
 ./scripts/feeds update -a
 ./scripts/feeds install -a
+
+# 修 feed 包里的 LuCI 表单缺陷（必须在 install 之后；之后只要再跑一次 feeds update 就被冲掉，要重新跑这步）
+sh /path/to/ImmortalWrt-firmware-build/patch-feed-packages.sh
 
 # 选择配置（按上表选对应那份）
 cp an7581.config .config

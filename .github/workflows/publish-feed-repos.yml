@@ -27,8 +27,9 @@ env:
   # 设备配置文件（复制成 openwrt/.config）与缓存 key 前缀；与固件工作流同值才能共用缓存
   CONFIG_FILE: an7581.config
   CONFIG_NAME: an7581
-  # 三个自定义脚本：追加 feed 源 → 只编发布集的包 → 拷成 Pages 站点目录
+  # 四个自定义脚本：追加 feed 源 → 修 feed 包里的 LuCI 缺陷 → 只编发布集的包 → 拷成 Pages 站点目录
   SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
+  SCRIPT_PATCH_FEED_PACKAGES: patch-feed-packages.sh
   SCRIPT_BUILD_FEED_PACKAGES: build-feed-packages.sh
   SCRIPT_PUBLISH_FEED_REPOS: publish-feed-repos.sh
   # 编译环境时区
@@ -165,10 +166,15 @@ jobs:
       run: cd openwrt && ./scripts/feeds update -a
 
     # ----------------------------------------------------------
-    # 步骤 8: 安装 feeds 到编译环境
+    # 步骤 8: 安装 feeds 到编译环境，再按脚本修 feed 包里的 LuCI 表单缺陷
     # ----------------------------------------------------------
+    # 固件那趟已经打过同一个补丁；这里漏打的话，设备 apk add / 升级 luci-app-mosdns 会把未修的页面装回去
     - name: Install feeds
-      run: cd openwrt && ./scripts/feeds install -a
+      run: |
+        chmod +x $SCRIPT_PATCH_FEED_PACKAGES
+        cd openwrt
+        ./scripts/feeds install -a
+        $GITHUB_WORKSPACE/$SCRIPT_PATCH_FEED_PACKAGES
 
     # ----------------------------------------------------------
     # 步骤 9: 还原 APK 仓库签名私钥（Secret: PONWRT_APK_PRIVATE_KEY，本工作流的硬性前提）
