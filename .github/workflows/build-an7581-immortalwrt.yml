@@ -1,7 +1,7 @@
 # ============================================================
 # ImmortalWrt 固件编译工作流 (AN7581 XGS-PON)
 # 目标设备: Nokia XG-040G-MD + FiberHome HG5382A (Airoha AN7581)
-# 源码来源: https://github.com/DenzelVincent/ponwrt.git (master 分支)
+# 源码来源: https://github.com/DenzelVincent/ponwrt.git (分支运行时可选: master 基线 / bugfix 修复验证)
 # 触发方式: 手动触发 (workflow_dispatch)
 # ============================================================
 
@@ -13,6 +13,14 @@ on:
   # 手动触发：可在 GitHub Actions 页面点击 "Run workflow" 按钮
   workflow_dispatch:
     inputs:
+      # 源码分支：master 是 XGS-PON 基线，bugfix 承载修复；集合稳定故用 choice，新增分支须同步 master 副本
+      repo_branch:
+        description: ponwrt 源码分支（master 基线 / bugfix 修复验证）
+        type: choice
+        options:
+          - master
+          - bugfix
+        default: master
       # 清空 dl 下载缓存，本趟全量重下、收尾重灌
       clean_dl_cache:
         description: 先清空 dl 下载缓存再编译（改了 package 的源码版本/地址、或怀疑 dl 里是旧包时勾选）
@@ -32,8 +40,8 @@ on:
 env:
   # 源码仓库地址
   REPO_URL: https://github.com/DenzelVincent/ponwrt.git
-  # 源码分支：AN7581 使用 master 分支（XGS-PON 基线）
-  REPO_BRANCH: master
+  # 源码分支：由运行输入决定，未传时回落 master（schedule/API 触发不带 inputs）
+  REPO_BRANCH: ${{ inputs.repo_branch || 'master' }}
   # 设备配置文件（复制成 openwrt/.config）与缓存 key 前缀；改名须同步两条 cache key 里的文件名
   CONFIG_FILE: an7581.config
   CONFIG_NAME: an7581
@@ -63,6 +71,7 @@ jobs:
       devices: ${{ steps.organize.outputs.devices }}
       fw_version: ${{ steps.version.outputs.fw_version }}
       file_date: ${{ steps.compile.outputs.file_date }}
+      src_sha: ${{ steps.version.outputs.src_sha }}
 
     permissions:
       actions: write    # 允许上传编译产物 artifact
@@ -127,6 +136,7 @@ jobs:
         ver="${ver##*,}"
         [ -n "$ver" ] || { echo "::error::没能从 openwrt/include/version.mk 解析出 VERSION_NUMBER"; exit 1; }
         echo "fw_version=$ver" >> $GITHUB_OUTPUT
+        echo "src_sha=$(git -C openwrt rev-parse HEAD)" >> $GITHUB_OUTPUT
 
     # ----------------------------------------------------------
     # 步骤 5: 缓存 dl/（源码包）与 openwrt/.ccache（编译对象），Clear 排在同层 Cache 之前
