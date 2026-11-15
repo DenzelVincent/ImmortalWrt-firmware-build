@@ -315,7 +315,7 @@ apk add luci-app-lucky                              # 只列出该包及其缺�
 
 ### feeds 源
 
-本仓库不带 `feeds.conf.default`，基础 feeds 用源码分支自带的那份。源码 `master` 分支含 `pon_drivers`（Airoha PON 硬件驱动）与 `pon_userspace`（LuCI/ponctl/pond 等用户空间工具）两个 feed，指向上游 `pbs05/openwrt-pon-drivers`、`pbs05/openwrt-pon-userspace`。
+本仓库不带 `feeds.conf.default`，基础 feeds 用源码分支自带的那份。源码 `master` 分支含 `pon_drivers`（Airoha PON 硬件驱动）与 `pon_userspace`（LuCI/ponctl/pond 等用户空间工具）两个 feed，指向上游 `pbs05/openwrt-pon-drivers`、`pbs05/openwrt-pon-userspace`。`bugfix` 分支把这两条改指个人 fork `DenzelVincent/openwrt-pon-drivers`、`DenzelVincent/openwrt-pon-userspace` 并钉完整 commit sha，承载 EN7572 激光稳态判定与 EPON 线路重开、LOID 补零方向可选与链路层原始报文展示等上游尚未合入的修复；`master` 保持上游不钉。换 pin 后本地编译须先删 `feeds/pon_drivers` 与 `feeds/pon_userspace`——带 `^ref` 的 feed 在 `scripts/feeds` 里不会再 update。
 
 默认 feed 的源只改源码仓库那一处；第三方/编译期增量 feed（当前是 `mosdns`、`lucky`、`airoha_npu`）只在 `add-feed-sources.sh` 增删，不写进源码仓库，两边不要互相掺。若确需整体换源，在本仓库根目录新建 `feeds.conf.default`，工作流会 `mv` 到源码目录并计入 `dl/` 缓存 key。
 
