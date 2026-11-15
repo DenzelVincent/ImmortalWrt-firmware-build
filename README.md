@@ -2,7 +2,7 @@
 
 > 源码：[ImmortalWrt](https://github.com/DenzelVincent/ponwrt) | 基于 [ImmortalWrt](https://github.com/immortalwrt/immortalwrt)
 
-本仓库用 GitHub Actions 云编译 Airoha AN758x 平台的光猫固件。本分支当前只有一个编译目标（AN7581 XGS-PON），一份工作流和一份设备配置文件。
+本仓库用 GitHub Actions 云编译 Airoha AN758x 平台的光猫固件。本分支当前只有一个编译目标（AN7581 XGS-PON），一份工作流和一份设备配置文件，一趟同时产出 Nokia XG-040G-MD 与 FiberHome HG5382A 两台设备的镜像。
 
 ## 免责声明
 
@@ -20,7 +20,7 @@ ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
 
 | 工作流 | 目标设备 | 源码分支 (`REPO_BRANCH`) | 设备配置 (`CONFIG_FILE`) | 缓存前缀 (`CONFIG_NAME`) | Profile (`SUBTARGET`) |
 | --- | --- | --- | --- | --- | --- |
-| `build-an7581-immortalwrt.yml` | Nokia XG-040G-MD (AN7581, XGS-PON) | `master` | `an7581.config` | `an7581` | `an7581` |
+| `build-an7581-immortalwrt.yml` | Nokia XG-040G-MD + FiberHome HG5382A (AN7581, XGS-PON) | `master` | `an7581.config` | `an7581` | `an7581` |
 
 > `REPO_BRANCH` 指向 PonWrt 源码仓库的分支（当前为 `master`）。源码分支写死在工作流的 `env` 段，不由本仓库分支名推导。
 >
@@ -45,8 +45,17 @@ ImmortalWrt 是一个用于研究和开发的开源光猫固件项目。
 | AN7581 | ZNXT ZN515XG-D | `znxt_zn515xg-d` | `reservearea` |
 | AN7583 | Nokia XG-040G-MF | `nokia_xg-040g-mf`、`nokia_xg-040g-mf-ubi` | `bosa`、`ri` |
 
-云编译配置只选中 `nokia_xg-040g-md-ubi` 这一台设备。上表是平台支持的完整设备清单：
+云编译配置选中 `nokia_xg-040g-md-ubi` 与 `fiberhome_hg5382a` 两台设备。上表是平台支持的完整设备清单：
 AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编译目标（`configs/an7583.config` 仅作参考）。
+
+两台设备共用一份配置，软件包差异写在 `CONFIG_TARGET_DEVICE_PACKAGES_airoha_an7581_DEVICE_<设备>` 里，
+不改全局 `=y`。原因是 `CONFIG_TARGET_PER_DEVICE_ROOTFS` 的基础层装着**所有** `=y` 包，每台设备都先拿到这一层，
+设备层只做加减；`=m` 的包编出来但不进基础层，只有某台设备的包列表拉它才装。
+HG5382A 无 USB 口，所以存储类 app（`luci-app-samba4` / `luci-app-diskman` / `luci-app-hd-idle` 及各自语言包）
+全局降 `=m`，由 Nokia 那个 profile 的包列表拉回；依赖闭包由设备层 `apk add` 从本地完整包仓库自动补齐，
+不需要手写。反过来给 HG5382A 写减号列表是错的：`apk del` 不删孤儿依赖，减完仍会留下 samba4 的依赖包。
+USB 内核模块与文件系统模块本来就是 `=m`，且 HG5382A 的 `DEVICE_PACKAGES` 不含它们、设备树里 USB 节点也是
+`disabled`，无需额外处理。
 
 ## 默认配置
 
@@ -152,6 +161,7 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 ├── set-firmware-defaults.sh       # 插入点 3（固件编译工作流）：make defconfig 之后，改固件出厂默认值
 ├── build-feed-packages.sh         # 插入点 4（发布工作流）：只编发布集里被选中的 feed 包
 ├── publish-feed-repos.sh          # 插入点 5（发布工作流）：把各 feed 的已签名仓库拷成 Pages 站点
+├── organize-firmware.sh           # 插入点 6（固件编译工作流）：make 之后，按设备归集镜像并输出设备清单
 └── files/                         # 固件出厂预置文件，工作流整目录 mv 进 openwrt/，rootfs 生成时覆盖同名文件
     └── etc/apk/repositories.d/customfeeds.list   # 设备端自建源清单，指向本仓库 Pages，同时是发布清单
 ```
@@ -168,10 +178,15 @@ AN7583 那行只说明 PonWrt 平台支持该设备，本分支不含 AN7583 编
 
 ## 脚本说明
 
-五个脚本对应编译流程里的五个插入点，工作流按 `env` 段的 `SCRIPT_ADD_FEED_SOURCES` /
+六个脚本对应编译流程里的六个插入点，工作流按 `env` 段的 `SCRIPT_ADD_FEED_SOURCES` /
 `SCRIPT_PATCH_FEED_PACKAGES` / `SCRIPT_SET_FIRMWARE_DEFAULTS` / `SCRIPT_BUILD_FEED_PACKAGES` /
-`SCRIPT_PUBLISH_FEED_REPOS` 调用（固件编译工作流用 1/2/3，发布工作流用 1/2/4/5）。文件名写"做什么"，
-执行阶段写在各脚本的头注释里；各编译目标共用同一批脚本，改动对所有产出生效。
+`SCRIPT_PUBLISH_FEED_REPOS` / `SCRIPT_ORGANIZE_FIRMWARE` 调用（固件编译工作流用 1/2/3/6，发布工作流用 1/2/4/5）。
+文件名写"做什么"，执行阶段写在各脚本的头注释里；各编译目标共用同一批脚本，改动对所有产出生效。
+
+`organize-firmware.sh` 里的 `device_label` 是产物命名的唯一登记处：profile slug → 设备名（大写去品牌），
+artifact 名、Release 标签、旧 Release 清理的 `delete_tag_pattern` 共用这套字面量。
+新增设备必须在此补一行，未登记即报错退出，不静默跳过。它按 `bin/targets/airoha/<subtarget>/profiles.json`
+的 `images[].name` 精确名单归集，不用前缀匹配——否则 `nokia_xg-040g-md-ubi` 会把 `-ubi-usb-sfp` 变体的镜像一起吞进来。
 
 ### `add-feed-sources.sh`
 
@@ -338,8 +353,13 @@ openssl ec -in private-key.pem -pubout -out public-key.pem
 10. 执行 `set-firmware-defaults.sh` 修改固件出厂默认参数
 11. 预下载软件包源码 (`make download`)
 12. 编译固件：全并发 → 同级并发重试 → 才降级 `make -j1 V=s`（ccache 取自步骤 9 写入的 .config，命令行不带参数）
-13. 收集固件镜像到 `release/<设备>/`，上传 artifact，打包 `tar.zst` 发布到 GitHub Release
-14. 清理旧 workflow runs (保留 7 天 / 至少 3 条) 和旧 Release (保留最近 3 个)
+13. `organize-firmware.sh` 按 `profiles.json` 把镜像归集到 `release/<设备>/`，输出设备清单、版本号与时间戳供后两个 job 做 matrix
+14. `package` job：按设备各上传一个 artifact，命名 `ImmortalWrt_<版本>_<设备>_<年-月-日-时-分>`
+15. `release` job（`release` 开关打开时才跑）：按设备各打包一个 `immortalwrt-<设备>.tar.zst` 建一个 Release，
+    并清理旧 workflow runs (保留 7 天 / 至少 3 条，整个 run 只清一次) 和旧 Release (本设备标签保留最近 3 个，连 tag 一起删)
+
+步骤 1–13 是 `build` job，14 是 `package` job，15 是 `release` job；后两个都按 `build` 输出的设备清单做 matrix，
+各自只处理一台设备，所以新增设备不用改工作流，只改配置与 `device_label` 映射。
 
 `publish-feed-repos.yml`（自建源的唯一发布入口，只编 app 并发布、不产镜像）：
 
@@ -365,7 +385,7 @@ openssl ec -in private-key.pem -pubout -out public-key.pem
 
 只有固件编译工作流有的开关：
 
-- `release` — 编译成功后创建 GitHub Release（只发固件镜像压缩包），默认关闭，关闭时只保留 artifact。
+- `release` — 编译成功后按设备各创建一个 GitHub Release（只发该设备的固件镜像压缩包），默认关闭，关闭时只保留每设备 artifact。
 
 自建 feed 源不再由固件编译工作流发布：固件那趟只管镜像，源的内容变化一律靠
 `publish-feed-repos.yml` 显式触发。
@@ -388,10 +408,12 @@ commit sha 写进 `add-feed-sources.sh` 的 pin 并提交 → 再跑这条工作
 ### 自定义配置
 
 - 改某台设备的软件包和内核模块，改它自己那份配置（`an7581.config`）；`configs/` 下的参考配置改了不影响云编译，工作流不读它
+- 同一平台的多台设备共用一份配置：只给某台设备加减包，改它的 `CONFIG_TARGET_DEVICE_PACKAGES_airoha_an7581_DEVICE_<设备>`，别动全局 `=y`（基础层每台设备都会拿到，详见上方"支持设备"）
+- 新增同平台设备：配置里打开 `CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_<设备>=y`，再到 `organize-firmware.sh` 的 `device_label` 补一行产物名映射；工作流不用改
 - 改默认 IP、DHCP 等参数改 `set-firmware-defaults.sh`，注意它对所有产出生效
 - 要修 feed 包源码里的上游缺陷（不是出厂值，是 LuCI 页面行为本身）改 `patch-feed-packages.sh`，两个工作流都会跑它
 - 换源码分支只改对应工作流 `env` 段的 `REPO_BRANCH`，本仓库的分支名不参与推导
-- 新增编译目标：复制一份工作流，改 `name:`、`REPO_BRANCH`、`CONFIG_FILE`、`CONFIG_NAME`、`DEVICE_NAME`、`SUBTARGET`，以及两处 cache key 里 `hashFiles` 的配置文件名（`CONFIG_NAME` 必须与现有各前缀互不为前缀）
+- 新增编译目标：复制一份工作流，改 `name:`、`REPO_BRANCH`、`CONFIG_FILE`、`CONFIG_NAME`、`SUBTARGET`，以及两处 cache key 里 `hashFiles` 的配置文件名（`CONFIG_NAME` 必须与现有各前缀互不为前缀）
 
 ## 本地编译
 

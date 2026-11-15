@@ -1,6 +1,6 @@
 # ============================================================
 # ImmortalWrt 固件编译工作流 (AN7581 XGS-PON)
-# 目标设备: Nokia XG-040G-MD (Airoha AN7581)
+# 目标设备: Nokia XG-040G-MD + FiberHome HG5382A (Airoha AN7581)
 # 源码来源: https://github.com/DenzelVincent/ponwrt.git (master 分支)
 # 触发方式: 手动触发 (workflow_dispatch)
 # ============================================================
@@ -37,16 +37,17 @@ env:
   # 设备配置文件（复制成 openwrt/.config）与缓存 key 前缀；改名须同步两条 cache key 里的文件名
   CONFIG_FILE: an7581.config
   CONFIG_NAME: an7581
-  # 目标设备和子目标（编译产物路径使用）
-  DEVICE_NAME: XG-040G-MD
+  # 子目标（编译产物路径使用）；设备名映射登记在 organize-firmware.sh 的 device_label
   SUBTARGET: an7581
-  # 三个自定义脚本 = 流程里的三个插入点，执行阶段见各行注释
+  # 四个自定义脚本 = 流程里的四个插入点，执行阶段见各行注释
   # 1) ./scripts/feeds update -a 之前 —— 增删增量 feed 源（mosdns / lucky / airoha_npu）
   SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
   # 2) ./scripts/feeds install -a 之后 —— 修 feed 包里 LuCI 表单「值等于默认值就删」的缺陷
   SCRIPT_PATCH_FEED_PACKAGES: patch-feed-packages.sh
   # 3) make defconfig 之后 —— 改固件出厂默认值 (默认 IP、DHCP 等)
   SCRIPT_SET_FIRMWARE_DEFAULTS: set-firmware-defaults.sh
+  # 4) make 之后 —— 按设备归集镜像，输出设备清单供 package/release job 做 matrix
+  SCRIPT_ORGANIZE_FIRMWARE: organize-firmware.sh
   # 编译环境时区
   TZ: Asia/Shanghai
   # 可选覆盖：本仓库根存在该文件时才覆盖源码自带 feeds
@@ -56,6 +57,12 @@ jobs:
   build:
     name: build-firmware
     runs-on: ubuntu-24.04
+
+    # 设备清单与版本号跨 job 传递：package/release 按 devices 做 matrix，各自只处理一台
+    outputs:
+      devices: ${{ steps.organize.outputs.devices }}
+      fw_version: ${{ steps.version.outputs.fw_version }}
+      file_date: ${{ steps.compile.outputs.file_date }}
 
     permissions:
       actions: write    # 允许上传编译产物 artifact
@@ -108,6 +115,7 @@ jobs:
     # 步骤 4: 克隆源码到 /srcdir，解析固件版本号供产物名使用
     # ----------------------------------------------------------
     - name: Clone source code
+      id: version
       working-directory: /srcdir
       run: |
         echo "Free space:"
@@ -118,7 +126,7 @@ jobs:
         ver="${raw%)}"
         ver="${ver##*,}"
         [ -n "$ver" ] || { echo "::error::没能从 openwrt/include/version.mk 解析出 VERSION_NUMBER"; exit 1; }
-        echo "FW_VERSION=$ver" >> $GITHUB_ENV
+        echo "fw_version=$ver" >> $GITHUB_OUTPUT
 
     # ----------------------------------------------------------
     # 步骤 5: 缓存 dl/（源码包）与 openwrt/.ccache（编译对象），Clear 排在同层 Cache 之前
@@ -258,7 +266,7 @@ jobs:
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j$(nproc) || make -j1 V=s || exit 1
         echo "status=success" >> $GITHUB_OUTPUT
-        echo "FILE_DATE=_$(date +"%Y-%m-%d-%H-%M")" >> $GITHUB_ENV
+        echo "file_date=_$(date +"%Y-%m-%d-%H-%M")" >> $GITHUB_OUTPUT
 
     # ----------------------------------------------------------
     # 步骤 13: 检查磁盘使用情况
@@ -268,90 +276,122 @@ jobs:
       run: df -hT
 
     # ----------------------------------------------------------
-    # 步骤 14: 把可刷写镜像收进 release/<设备>/
+    # 步骤 14: 按设备把可刷写镜像收进 release/<设备>/，并输出设备清单
     # ----------------------------------------------------------
     - name: Organize firmware files
       id: organize
-      if: (!cancelled())
+      if: steps.compile.outputs.status == 'success' && !cancelled()
       run: |
-        echo "DEVICE=$DEVICE_NAME" >> $GITHUB_ENV
-        mkdir -p "release/$DEVICE_NAME"
-        for f in openwrt/bin/targets/airoha/${SUBTARGET}/*.bin openwrt/bin/targets/airoha/${SUBTARGET}/*.itb; do
-          [ -e "$f" ] || continue
-          cp "$f" "release/$DEVICE_NAME/"
-        done
-        ls -l "release/$DEVICE_NAME"
-        echo "status=success" >> $GITHUB_OUTPUT
+        chmod +x $SCRIPT_ORGANIZE_FIRMWARE
+        $GITHUB_WORKSPACE/$SCRIPT_ORGANIZE_FIRMWARE
 
     # ----------------------------------------------------------
-    # 步骤 15: 上传 release/<设备> 散文件目录为 artifact（tar.zst 打包由 release job 执行）
+    # 步骤 15: 上传归集结果作为 job 间中转，每设备 artifact 由 package job 产出
     # ----------------------------------------------------------
-    - name: Upload firmware directory
+    - name: Upload raw firmware
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: ImmortalWrt_${{ env.FW_VERSION }}_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: release/${{ env.DEVICE }}
+        name: firmware-raw
+        path: release/
+        retention-days: 1
 
   # ------------------------------------------------------------
-  # Release 发布 job：编译成功后打包上传 Release，并清理旧 runs / Releases
+  # 打包 job：按设备各上传一个 artifact，命名 ImmortalWrt_<版本>_<设备>_<日期-时分>
+  # 设备清单来自 build 的 organize 步骤，新增设备只需改配置与 device_label 映射
+  # ------------------------------------------------------------
+  package:
+    name: package-${{ matrix.device }}
+    runs-on: ubuntu-latest
+    needs: build
+    if: needs.build.result == 'success' && !cancelled()
+
+    permissions:
+      actions: write    # 允许上传每设备 artifact
+
+    strategy:
+      fail-fast: false
+      matrix:
+        device: ${{ fromJson(needs.build.outputs.devices) }}
+
+    steps:
+      # ----------------------------------------------------------
+      # 步骤 1: 取回 build 归集好的镜像目录
+      # ----------------------------------------------------------
+      - name: Download raw firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-raw
+          path: release
+
+      # ----------------------------------------------------------
+      # 步骤 2: 只上传本设备子目录（tar.zst 打包由 release job 执行）
+      # ----------------------------------------------------------
+      - name: Upload firmware directory
+        uses: actions/upload-artifact@main
+        with:
+          name: ImmortalWrt_${{ needs.build.outputs.fw_version }}_${{ matrix.device }}${{ needs.build.outputs.file_date }}
+          path: release/${{ matrix.device }}
+
+  # ------------------------------------------------------------
+  # Release 发布 job：按设备各建一个 Release，并清理旧 runs / Releases
   # 由 workflow_dispatch 的 release 开关控制，默认关闭；关闭时只保留 artifact
   # ------------------------------------------------------------
   release:
-    name: Create Release
+    name: release-${{ matrix.device }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, package]
     if: needs.build.result == 'success' && !cancelled() && inputs.release
 
     permissions:
       contents: write   # 允许创建 Release
       actions: write    # 允许删除/管理 workflow runs
 
+    strategy:
+      fail-fast: false
+      matrix:
+        device: ${{ fromJson(needs.build.outputs.devices) }}
+
     steps:
 
       # ----------------------------------------------------------
-      # 步骤 1: 下载本次 run 的固件 artifact（按 artifact 名前缀取，命名约定见 build 步骤 15）
+      # 步骤 1: 下载本设备的 artifact（命名约定见 package job 步骤 2）
       # ----------------------------------------------------------
-      - name: Download firmware artifacts
+      - name: Download firmware artifact
         uses: actions/download-artifact@v4
         with:
-          pattern: ImmortalWrt_*
-          merge-multiple: false
-          path: artifacts
+          name: ImmortalWrt_${{ needs.build.outputs.fw_version }}_${{ matrix.device }}${{ needs.build.outputs.file_date }}
+          path: firmware
 
       # ----------------------------------------------------------
-      # 步骤 2: 把各散文件目录打包成 immortalwrt-<设备>.tar.zst（设备名从 artifact 名反解，约定见步骤 3）
+      # 步骤 2: 把本设备散文件目录打包成 immortalwrt-<设备>.tar.zst
       # ----------------------------------------------------------
-      - name: Package firmware by device
+      - name: Package firmware
+        env:
+          DEVICE: ${{ matrix.device }}
         run: |
           mkdir -p release
-          for d in artifacts/*/; do
-            [ -d "$d" ] || continue
-            name="$(basename "$d")"
-            device="$(echo "$name" | sed -E 's/^ImmortalWrt_[^_]*_//; s/_[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}$//')"
-            tar --zstd -cf "release/immortalwrt-${device}.tar.zst" -C "$d" .
-            echo "Packaged $device -> release/immortalwrt-${device}.tar.zst"
-          done
+          tar --zstd -cf "release/immortalwrt-${DEVICE}.tar.zst" -C firmware .
           ls -l release/
 
       # ----------------------------------------------------------
-      # 步骤 3: 版本号与时间戳从 artifact 名回取，生成 Release 标签与说明
+      # 步骤 3: 生成 Release 标签与说明（版本号/时间戳取自 build job 输出，不反解 artifact 名）
       # ----------------------------------------------------------
       - name: Generate release tag
         id: tag
+        env:
+          DEVICE: ${{ matrix.device }}
+          FW: ${{ needs.build.outputs.fw_version }}
+          FILE_DATE: ${{ needs.build.outputs.file_date }}
         run: |
-          # 约定 artifact 名 ImmortalWrt_<版本>_<型号>_<日期-时分>；build job 的 env 不跨 job，只能回取
-          first="$(ls -1 artifacts | head -1)"
-          [[ "$first" =~ ^ImmortalWrt_([0-9A-Za-z.-]+)_(.+)_([0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2})$ ]] || { echo "::error::artifact 名不符合命名约定: $first"; exit 1; }
-          fw="${BASH_REMATCH[1]}"
-          ts="${BASH_REMATCH[3]}"
-          echo "release_tag=ImmortalWrt_${fw}_${DEVICE_NAME}_${ts}" >> $GITHUB_OUTPUT
-          touch release.txt
-          echo "ImmortalWrt ${fw} for Nokia XG-040G-MD (Airoha AN7581)" >> release.txt
+          # file_date 带前导下划线（沿用 artifact 名拼接约定），标签里要去掉
+          ts="${FILE_DATE#_}"
+          echo "release_tag=ImmortalWrt_${FW}_${DEVICE}_${ts}" >> $GITHUB_OUTPUT
+          echo "ImmortalWrt ${FW} for ${DEVICE} (Airoha AN7581)" > release.txt
           echo "status=success" >> $GITHUB_OUTPUT
 
       # ----------------------------------------------------------
-      # 步骤 4: 上传固件压缩包到 GitHub Release
+      # 步骤 4: 上传固件压缩包到本设备的 GitHub Release
       # ----------------------------------------------------------
       - name: Upload firmware to release
         id: release
@@ -365,9 +405,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ----------------------------------------------------------
-      # 步骤 5: 清理旧 workflow runs（保留 7 天，至少 3 条）
+      # 步骤 5: 清理旧 workflow runs（保留 7 天，至少 3 条）；整个 run 只需清一次，只跑首个 matrix 分支
       # ----------------------------------------------------------
       - name: Delete workflow runs
+        if: strategy.job-index == 0
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
@@ -384,6 +425,6 @@ jobs:
         with:
           keep_latest: 3
           delete_tags: true
-          delete_tag_pattern: _XG-040G-MD_
+          delete_tag_pattern: _${{ matrix.device }}_
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
