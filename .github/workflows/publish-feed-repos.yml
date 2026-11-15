@@ -2,7 +2,7 @@
 # 自建 feed 源发布工作流 (AN7581 / ImmortalWrt)
 # 用途: 只编译发布集里的 app 包并签名成 apk 仓库发布到本仓库 Pages，不产出固件镜像
 #       自建 feed 源的唯一发布入口；固件编译工作流只产镜像，不碰 Pages
-# 发布清单: files/etc/apk/repositories.d/customfeeds.list (出厂源清单即发布清单)
+# 发布清单: ponwrt 源码树 files/etc/apk/repositories.d/customfeeds.list (出厂源清单即发布清单)
 # 触发方式: 手动触发 (workflow_dispatch)
 # ============================================================
 
@@ -109,12 +109,12 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         gh cache list --limit 100 --json key,id | \
-          jq -r '.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-dl-")) | .id' | \
+          jq -r '.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-dl-")) | .id' | \
           xargs -r gh cache delete
         left=$(gh cache list --limit 100 --json key | \
-          jq '[.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-dl-"))] | length')
+          jq '[.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-dl-"))] | length')
         if [ "$left" != "0" ]; then
-          echo "::error::清理后 ${{ env.CONFIG_NAME }}-dl- 前缀仍剩 $left 条缓存条目，本趟不算冷编译"
+          echo "::error::清理后 ${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-dl- 前缀仍剩 $left 条缓存条目，本趟不算冷编译"
           exit 1
         fi
 
@@ -122,9 +122,9 @@ jobs:
       uses: actions/cache@v4
       with:
         path: openwrt/dl
-        key: ${{ env.CONFIG_NAME }}-dl-${{ hashFiles('feeds.conf.default', 'an7581.config') }}
+        key: ${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-dl-${{ hashFiles('feeds.conf.default', 'an7581.config') }}
         restore-keys: |
-          ${{ env.CONFIG_NAME }}-dl-
+          ${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-dl-
 
     - name: Clear ccache
       if: ${{ inputs.clean_ccache }}
@@ -132,12 +132,12 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         gh cache list --limit 100 --json key,id | \
-          jq -r '.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-ccache-")) | .id' | \
+          jq -r '.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-ccache-")) | .id' | \
           xargs -r gh cache delete
         left=$(gh cache list --limit 100 --json key | \
-          jq '[.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-ccache-"))] | length')
+          jq '[.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-ccache-"))] | length')
         if [ "$left" != "0" ]; then
-          echo "::error::清理后 ${{ env.CONFIG_NAME }}-ccache- 前缀仍剩 $left 条缓存条目，本趟不算冷编译"
+          echo "::error::清理后 ${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-ccache- 前缀仍剩 $left 条缓存条目，本趟不算冷编译"
           exit 1
         fi
 
@@ -145,9 +145,9 @@ jobs:
       uses: actions/cache@v4
       with:
         path: openwrt/.ccache
-        key: ${{ env.CONFIG_NAME }}-ccache-${{ hashFiles('feeds.conf.default', 'an7581.config') }}
+        key: ${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-ccache-${{ hashFiles('feeds.conf.default', 'an7581.config') }}
         restore-keys: |
-          ${{ env.CONFIG_NAME }}-ccache-
+          ${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-ccache-
 
     # ----------------------------------------------------------
     # 步骤 6: 执行 add-feed-sources.sh 增删第三方 feed 源

@@ -25,17 +25,24 @@
 | `build-ax3000t-immortalwrt.yml` | MT7981 / master | 编译小米 AX3000T 固件（源码 hanwckf `openwrt-21.02`；standard / stock / AN8855 变体按配置勾选） | 手动触发 (`workflow_dispatch`) |
 | `build-rax3000m-immortalwrt.yml` | MT7981 / master | 编译 CMCC RAX3000M 固件（源码个人 fork `24.10.6`，`mediatek/filogic` 子目标；同一 profile 也产出 eMMC 引导件，收集时排除，Release 只放 SPI-NAND 四件） | 手动触发 (`workflow_dispatch`) |
 | `build-mt7981-u-boot.yml` | MT7981 / master | 并行编译 MT7981 平台所有板型变体的 U-Boot 引导加载器 | 手动触发 (`workflow_dispatch`) |
-| `build-an7581-immortalwrt.yml` | AN7581 / master | 编译 AN7581 平台光猫固件 (XGS-PON)，源码分支 `REPO_BRANCH=master`；只产镜像，不发布自建 feed 源 | 手动触发 (`workflow_dispatch`) |
+| `build-an7581-immortalwrt.yml` | AN7581 / master | 编译 AN7581 平台光猫固件 (XGS-PON)，源码分支由 `repo_branch` 输入决定（`master` 基线 / `bugfix` 修复验证，默认 `master`）；只产镜像，不发布自建 feed 源。`release` 开关只在选 `master` 时生效 | 手动触发 (`workflow_dispatch`) |
 | `publish-feed-repos.yml` | AN7581 / master | 自建 feed 源的唯一发布入口：只编 AN7581 发布集里的 app 包并签名发布到 Pages，不产固件镜像；用于 app 打过新 tag、`add-feed-sources.sh` 的 pin 已跟上之后的单独发版 | 手动触发 (`workflow_dispatch`) |
 
-> `REPO_URL` / `REPO_BRANCH` 写死在各工作流的 `env` 段（AN758x 指向 PonWrt 源码仓库的分支，
-> RAX3000M 指向个人 fork `DenzelVincent/immortalwrt` 的 `24.10.6` 分支），不由本仓库分支名推导；
-> 这些副本留在 master 是因为非默认分支的工作流必须先在默认分支存在才能手动运行。
+> `REPO_URL` 写死在各工作流的 `env` 段（AN758x 指向 PonWrt 源码仓库，RAX3000M 指向个人 fork
+> `DenzelVincent/immortalwrt` 的 `24.10.6` 分支），不由本仓库分支名推导；`REPO_BRANCH` 只有
+> `build-an7581-immortalwrt.yml` 改成由 `repo_branch` 输入求值（`${{ inputs.repo_branch || 'master' }}`，
+> 未传时回落 master），其余工作流仍写死。这些副本留在 master 是因为非默认分支的工作流必须先在默认分支存在才能手动运行。
 > 源码仓库只保留默认 feed，`mosdns` / `lucky` / `airoha_npu` 等增量 feed 由各分支的 `add-feed-sources.sh` 统一追加。
 >
 > `publish-feed-repos.yml` 与 `build-an7581-immortalwrt.yml` 用同一份 `an7581.config`，两条 cache key
-> 逐字相同（共用同一份 `dl/` 与 `.ccache`），选中哪些包也由同一份配置决定；它省掉的是内核与镜像组装，
+> 都带源码分支段；发布工作流固定 `master`，故固件工作流选 `master` 时两者逐字相同（共用同一份 `dl/` 与 `.ccache`），
+> 选 `bugfix` 时天然隔离。选中哪些包也由同一份配置决定；发布工作流省掉的是内核与镜像组装，
 > 工具链和 `luci-base`、`lua` 这类依赖省不掉，缓存命中也要几十分钟。
+>
+> `release` 门控到 `master` 的原因：Release 标签名不含源码分支，bugfix 发布会与正式版共用同一设备的
+> `keep_latest: 3` 名额并可能删掉正式版，故 bugfix 只出 artifact。门控读 `needs.build.outputs.src_branch`
+> 而非 `env.REPO_BRANCH`——job 级 `if` 的可用上下文只有 `github`/`needs`/`vars`/`inputs`，写 `env.` 会恒假。
+> Release 说明里附源码分支与提交 sha 供溯源。
 
 ## MT7981 平台默认配置
 
@@ -168,13 +175,13 @@ AN7581 XGS-PON 编译目标的插件清单如下，NPU 固件包为 `airoha-en75
 
 | 文件 | 用途 |
 |---|---|
-| `an7581.config`（在 `AN7581` 分支根目录）、`ax3000t.config` / `rax3000m.config`（在 `MT7981` 分支根目录） | 按设备型号命名的 OpenWrt menuconfig 配置，master 不存放配置文件 — 定义目标设备、内核选项、软件包；`ax3000t.config` 面向 hanwckf 21.02 的 `mediatek/mt7981`，`rax3000m.config` 面向个人 fork `24.10.6` 的 `mediatek/filogic`，两份配置的 target 符号与软件包段互不通用；工作流复制成 `openwrt/.config` 并无条件追加 `CONFIG_CCACHE=y`（`dl/` 与 `.ccache` 两层缓存默认启用；三份固件编译工作流各带 `clean_dl_cache` / `clean_ccache` 两个清理开关，默认不勾）；缓存 key 的前缀取自工作流 env 的 `CONFIG_NAME`，三个值（`an7581` / `ax3000t` / `rax3000m`）两两不同，key 与恢复键都带 `-dl-` / `-ccache-` 段，同一分支上的多份工作流才不会恢复到彼此的缓存；改设备名要同步 `CONFIG_FILE`、`CONFIG_NAME` 和 key 里 `hashFiles` 的字面文件名（该参数不接受变量）；勾选清理开关时对应的 `Clear ... cache` 步骤排在同层 `Cache ...` 之前，删掉本设备前缀的条目后本趟全量下载/重编、收尾重存（一趟即恢复热度），并有删净断言，没删净直接失败；`rax3000m.config` 另显式关闭 7 个 `trusted-firmware-a-mt79xx-ram-*`（上游 `include/trusted-firmware-a.mk` 给了 `DEFAULT:=TARGET_mediatek_filogic`，勾 filogic 就默认全选，各自只往 BIN_DIR 丢一个 UART 救砖 `mt79xx-ram-*-bl2.bin`，关掉省 7 次 TFA 交叉编译；`*-spim-nand-ddr4` 等隐藏变体不能关，镜像构建要用它们的 staging 产物） |
+| `an7581.config`（在 `AN7581` 分支根目录）、`ax3000t.config` / `rax3000m.config`（在 `MT7981` 分支根目录） | 按设备型号命名的 OpenWrt menuconfig 配置，master 不存放配置文件 — 定义目标设备、内核选项、软件包；`ax3000t.config` 面向 hanwckf 21.02 的 `mediatek/mt7981`，`rax3000m.config` 面向个人 fork `24.10.6` 的 `mediatek/filogic`，两份配置的 target 符号与软件包段互不通用；工作流复制成 `openwrt/.config` 并无条件追加 `CONFIG_CCACHE=y`（`dl/` 与 `.ccache` 两层缓存默认启用；三份固件编译工作流各带 `clean_dl_cache` / `clean_ccache` 两个清理开关，默认不勾）；缓存 key 的前缀取自工作流 env 的 `CONFIG_NAME`，三个值（`an7581` / `ax3000t` / `rax3000m`）两两不同，key 与恢复键都带 `-dl-` / `-ccache-` 段，同一分支上的多份工作流才不会恢复到彼此的缓存；AN7581 的两个工作流另在前缀后插入源码分支段（`an7581-<branch>-dl-…`），选 `bugfix` 时与 `master` 各自独立、勾 `clean_*` 只清本分支；改设备名要同步 `CONFIG_FILE`、`CONFIG_NAME` 和 key 里 `hashFiles` 的字面文件名（该参数不接受变量）；勾选清理开关时对应的 `Clear ... cache` 步骤排在同层 `Cache ...` 之前，删掉本设备前缀的条目后本趟全量下载/重编、收尾重存（一趟即恢复热度），并有删净断言，没删净直接失败；`rax3000m.config` 另显式关闭 7 个 `trusted-firmware-a-mt79xx-ram-*`（上游 `include/trusted-firmware-a.mk` 给了 `DEFAULT:=TARGET_mediatek_filogic`，勾 filogic 就默认全选，各自只往 BIN_DIR 丢一个 UART 救砖 `mt79xx-ram-*-bl2.bin`，关掉省 7 次 TFA 交叉编译；`*-spim-nand-ddr4` 等隐藏变体不能关，镜像构建要用它们的 staging 产物） |
 | `add-feed-sources.sh` | feeds 更新**前**执行的钩子脚本 — 往 `feeds.conf.default` 追加本项目的增量 feed。feed 名只能用字母、数字、下划线，带连字符会让 `feeds update` 报语法错误。AN7581 分支当前插入 `mosdns` feed（`sbwml/luci-app-mosdns`，pin `dbdd91a…` = tag `v5.3.4-r15`）并追加 `lucky`（`gdy666/luci-app-lucky`，pin `b07f65c…`）与 `airoha_npu`（`DenzelVincent/luci-app-airoha-npu`，pin `b24b50a…` = tag `v1.2.1`），均 `grep` 判重；MT7981 分支只追加 `lucky`（同一条 pin）。一律锁完整 commit sha、不锁 tag：`scripts/feeds` 的 `init_commit` 是 `clone --depth 1` → `fetch --depth=1 origin '<ref>'` → `checkout '<ref>'`，末步按**名字**检出，浅克隆只有在该 ref 正好指向被克隆的那个 commit 时才有 `refs/tags/<ref>`，非 tip 的 tag 一律 `pathspec ... did not match` 并让整个步骤退出非 0；sha 按对象取、按对象检出，与 tip 位置无关。脚本末尾断言每条 ref 都是 40 位十六进制；本地换 pin 要先删 `feeds/<name>/`（带 `^ref` 的 feed 在 `scripts/feeds` 里是"给了 ref 就不 update"）；连字符限制只约束 feed 名，`^<ref>` 段里的 `-` 不受影响。**`mosdns` 必须用 `sed` 插到 `src-git packages` 之前而非追加** —— `immortalwrt/packages` 里也有 `net/mosdns`，而 `scripts/feeds` 的 `install_src` 对同名包只认第一个声明的 feed，行序反了会装成官方那份，脚本插完立刻断言行序。源码仓库只保留默认 feed，增量 feed 一律在本脚本增删；也不写回源码仓库。 |
 | `build-feed-packages.sh` | `make defconfig` **后**、`make package/index` **前**执行的钩子脚本（仅 `publish-feed-repos.yml`） — 从出厂 `customfeeds.list` 取 feed 名，再到 `tmp/.packagedeps` 里取这些 feed 下被 `.config` 选中的包路径，拼成 `make package/<路径>/compile` 目标；不编内核、不组装镜像，但工具链与依赖省不掉。空集合、feed 目录不存在都硬失败 |
 | `set-firmware-defaults.sh` | `make defconfig` **后**、编译**前**执行的钩子脚本 — 用 `sed` 改源码树里会被装进 rootfs 的文件，即固件的出厂默认值（恢复出厂和 `sysupgrade -n` 后仍是这里的值）。AN758x 编译目标共用一份，改动对所有产出生效；MT7981 与 AN7581 两分支都把默认 LAN IP 改成 `10.0.0.1` |
-| `publish-feed-repos.sh` | 编译**完成后**、上传 Pages **前**执行的钩子脚本 — 逐条解析出厂 `files/etc/apk/repositories.d/customfeeds.list` 里的 `<arch>/<feed>`，把已签名的仓库拷成 `feed-site/`；清单里任何一条本次没产出就失败（Pages 整站替换）。索引与签名由构建系统的 `index` 目标用固件同一把私钥完成，本脚本只搬运，由 `publish-feed-repos.yml` 调用 |
+| `publish-feed-repos.sh` | 编译**完成后**、上传 Pages **前**执行的钩子脚本 — 逐条解析 ponwrt 源码树 `files/etc/apk/repositories.d/customfeeds.list` 里的 `<arch>/<feed>`，把已签名的仓库拷成 `feed-site/`；清单里任何一条本次没产出就失败（Pages 整站替换）。索引与签名由构建系统的 `index` 目标用固件同一把私钥完成，本脚本只搬运，由 `publish-feed-repos.yml` 调用 |
 | `feeds.conf.default` | （可选）覆盖默认 feeds 软件源 |
-| `files/` | （可选）预置文件目录，将文件覆盖到固件根文件系统；`files/etc/apk/repositories.d/customfeeds.list` 同时是设备端出厂源清单与 CI 发布清单（单一事实来源） |
+| `files/` | **不在本仓库**：出厂 overlay 归各源码仓库自己的 `files/`（AN7581 在 PonWrt 的 master 与 bugfix 两分支），rootfs 生成时覆盖同名文件。`files/etc/apk/repositories.d/customfeeds.list` 同时是设备端出厂源清单与 CI 发布清单（单一事实来源）。原先本仓库也有一份、工作流用 `mv files openwrt/files` 搬进去，但源码树已有 `files/` 时 `mv` 会嵌套成 `openwrt/files/files/…` 而不是合并，故所有权归一后那行 `mv` 与本仓库的 `files/` 一并删除 |
 
 ## 编译指南参考
 
