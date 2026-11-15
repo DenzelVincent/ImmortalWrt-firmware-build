@@ -161,9 +161,7 @@ USB 内核模块与文件系统模块本来就是 `=m`，且 HG5382A 的 `DEVICE
 ├── set-firmware-defaults.sh       # 插入点 3（固件编译工作流）：make defconfig 之后，改固件出厂默认值
 ├── build-feed-packages.sh         # 插入点 4（发布工作流）：只编发布集里被选中的 feed 包
 ├── publish-feed-repos.sh          # 插入点 5（发布工作流）：把各 feed 的已签名仓库拷成 Pages 站点
-├── organize-firmware.sh           # 插入点 6（固件编译工作流）：make 之后，按设备归集镜像并输出设备清单
-└── files/                         # 固件出厂预置文件，工作流整目录 mv 进 openwrt/，rootfs 生成时覆盖同名文件
-    └── etc/apk/repositories.d/customfeeds.list   # 设备端自建源清单，指向本仓库 Pages，同时是发布清单
+└── organize-firmware.sh           # 插入点 6（固件编译工作流）：make 之后，按设备归集镜像并输出设备清单
 ```
 
 > 设备配置按型号命名放在仓库根，是为了和编译期真正的 `openwrt/.config` 区分开：
@@ -174,7 +172,8 @@ USB 内核模块与文件系统模块本来就是 `=m`，且 HG5382A 的 `DEVICE
 > 字面量；各工作流只哈希自己那份，改一台设备的配置不会让另一台的缓存失效。
 >
 > 本仓库根目录**不放** `feeds.conf.default`（工作流留着 `[ -e ]` 覆盖入口，按需自建）。
-> `files/` 同理是留着入口后新增的：只放需要随固件出厂的文件，别往里塞编译期脚本。
+> 出厂 overlay 归 ponwrt 源码树的 `files/`，本仓库不再持有：两份 overlay 相撞时 `mv` 会把源目录嵌进目标而不是合并，
+> 所以所有权归一后那行 `mv` 直接删掉。设备端自建源清单 `files/etc/apk/repositories.d/customfeeds.list` 也在源码树里。
 
 ## 脚本说明
 
@@ -257,7 +256,7 @@ feeds 更新**前**执行，改 `feeds.conf.default`。源码仓库（PonWrt）�
 `make defconfig` **后**、`make package/index` **前**执行，只编发布集里被 `.config` 选中的 feed 包，
 不编内核、不组装镜像。只在 `publish-feed-repos.yml` 里调用。要点：
 
-- 发布集从 `files/etc/apk/repositories.d/customfeeds.list` 解析 feed 名，与 `publish-feed-repos.sh`
+- 发布集从源码树 `files/etc/apk/repositories.d/customfeeds.list` 解析 feed 名，与 `publish-feed-repos.sh`
   同一个事实来源，工作流里不另写一份包名清单
 - 要编哪些包取自 `tmp/.packagedeps` 里 `package-$(CONFIG_PACKAGE_xxx) += feeds/<feed>/<dir>` 这类行，
   用的是**路径**形态（`make package/<路径>/compile` 收的就是路径），不猜包名；选中集合与整镜像编译同出一份配置
@@ -272,7 +271,7 @@ feeds 更新**前**执行，改 `feeds.conf.default`。源码仓库（PonWrt）�
 - 索引和签名不是本脚本做的：构建系统的 `index` 目标对每个 feed 目录跑过
   `apk mkndx --sign private-key.pem`，私钥就是步骤 9 还原的那对，固件 `/etc/apk/keys/` 里是配套公钥，
   所以设备装这里的包**不需要** `--allow-untrusted`。本脚本只搬运，不重签。
-- **出厂源清单就是发布清单**：`<arch>` 和 `<feed>` 两级目录都从 `files/etc/apk/repositories.d/customfeeds.list`
+- **出厂源清单就是发布清单**：`<arch>` 和 `<feed>` 两级目录都从源码树 `files/etc/apk/repositories.d/customfeeds.list`
   的 URL 逐条解析，不在工作流里另写一份 feed 列表，省掉两处漂移。
 - 清单里任何一条在本次产物里没有 `packages.adb` 就直接 `::error::` 失败——Pages 部署是整站替换，
   缺一条等于设备端那条 URL 变 404，发出去一个装不上东西的站点比报错难查。
@@ -295,7 +294,7 @@ feeds 更新**前**执行，改 `feeds.conf.default`。源码仓库（PonWrt）�
    后者由 apk 包安装并登记为 conffile，sysupgrade 保留。自建源一律走后者。
 
 于是分工是：默认源=官方包（可正常 `apk upgrade`），自建源=本项目 feed，站点地址即
-`files/etc/apk/repositories.d/customfeeds.list` 里那几条。自建源只有 `publish-feed-repos.yml` 一个发布入口，
+源码树 `files/etc/apk/repositories.d/customfeeds.list` 里那几条。自建源只有 `publish-feed-repos.yml` 一个发布入口，
 固件编译工作流不碰 Pages；两趟用的是同一份 `an7581.config`、同一对 cache key、同一把签名私钥，
 所以设备端认这个源。app 源码更新的发版顺序是「app 仓库 bump 版本号 → 打新 tag → 推 →
 改 `add-feed-sources.sh` 的 pin → 跑 `publish-feed-repos.yml`」，只改 pin 不跑它就只进镜像、不上源。
@@ -355,7 +354,7 @@ openssl ec -in private-key.pem -pubout -out public-key.pem
 12. 编译固件：全并发 → 同级并发重试 → 才降级 `make -j1 V=s`（ccache 取自步骤 9 写入的 .config，命令行不带参数）
 13. `organize-firmware.sh` 按 `profiles.json` 把镜像归集到 `release/<设备>/`，输出设备清单、版本号与时间戳供后两个 job 做 matrix
 14. `package` job：按设备各上传一个 artifact，命名 `ImmortalWrt_<版本>_<设备>_<年-月-日-时-分>`
-15. `release` job（`release` 开关打开时才跑）：按设备各打包一个 `immortalwrt-<设备>.tar.zst` 建一个 Release，
+15. `release` job（`release` 开关打开、且源码分支为 `master` 时才跑）：按设备各打包一个 `immortalwrt-<设备>.tar.zst` 建一个 Release，
     并清理旧 workflow runs (保留 7 天 / 至少 3 条，整个 run 只清一次) 和旧 Release (本设备标签保留最近 3 个，连 tag 一起删)
 
 步骤 1–13 是 `build` job，14 是 `package` job，15 是 `release` job；后两个都按 `build` 输出的设备清单做 matrix，
@@ -363,10 +362,10 @@ openssl ec -in private-key.pem -pubout -out public-key.pem
 
 `publish-feed-repos.yml`（自建源的唯一发布入口，只编 app 并发布、不产镜像）：
 
-1. 步骤 1–7 与上面完全相同（同一份源码分支、同一份 `an7581.config`、同一对 cache key，共用缓存）
+1. 步骤 1–7 与上面完全相同（本工作流固定 master、不接受分支输入；同一份 `an7581.config`，cache key 同样带分支段，故与固件工作流选 master 时共用缓存）
 2. 还原签名私钥（同样必填）：私钥缺失时构建系统会自己 `ecparam -genkey` 造一把随机的，
    索引照签、步骤照绿，但固件里的公钥不认它
-3. 复制配置 → `make defconfig`（不 `mv files/`、不跑 `set-firmware-defaults.sh`：那是镜像的出厂 overlay）
+3. 复制配置 → `make defconfig`（不跑 `set-firmware-defaults.sh`：那是镜像的出厂默认值；overlay 由源码树 `files/` 自带，本工作流不产镜像也用不到）
 4. `make download` → 显式编一次 host 版 `apk` 工具（单包 compile 与 `package/index` 都没把它列为前提）
 5. `build-feed-packages.sh` 只编发布集里被选中的包 → `make package/index` 生成签名索引
 6. `publish-feed-repos.sh` 拷成 `feed-site/` 并对账 → `pages` job 整站部署
@@ -376,16 +375,22 @@ openssl ec -in private-key.pem -pubout -out public-key.pem
 
 在 GitHub Actions 页面左侧**先选工作流**，再点 "Run workflow"，按需勾选开关：
 
-两个工作流共有的缓存开关（key 逐字相同，命中同一份缓存条目）：
+两个工作流共有的缓存开关（key 都带源码分支段；发布工作流固定 `master`，故固件工作流选 `master` 时两者逐字相同、命中同一份缓存条目）：
 
 - `clean_dl_cache` — 先清空 `dl/` 下载缓存再编译。改了某个 package 的源码版本或下载地址
   （Makefile 里的 `PKG_VERSION` / `PKG_SOURCE_VERSION` / `PKG_SOURCE_URL`）而缓存里仍是同名旧包时
   勾选；这些字段不在缓存 key 的哈希范围内，改了不会自动失效。
 - `clean_ccache` — 先清空 `openwrt/.ccache` 编译对象缓存再编译。怀疑复用到了不对的产物时勾选。
 
-只有固件编译工作流有的开关：
+只有固件编译工作流有的输入与开关：
 
+- `repo_branch` — 选 ponwrt 源码分支：`master`（XGS-PON 基线）或 `bugfix`（修复验证），默认 `master`；
+  未传时（schedule / API 触发）回落 `master`。缓存 key、restore-keys 与清理前缀都带分支段，两条分支各自独立，
+  勾 `clean_*` 只清本分支。发布工作流固定 `master`，不接受分支输入。
+  注意 `bugfix` 不只带 PON 修复：它的源码树 `files/` 还多了 mt76 线程亲和性脚本，选它不是纯净的 A/B 对照。
 - `release` — 编译成功后按设备各创建一个 GitHub Release（只发该设备的固件镜像压缩包），默认关闭，关闭时只保留每设备 artifact。
+  **只在 `repo_branch=master` 时生效**：标签名不含分支，bugfix 发布会与正式版共用同一设备的 `keep_latest: 3` 名额
+  并可能删掉正式版，故 bugfix 只出 artifact。Release 说明里附源码分支与提交 sha 供溯源。
 
 自建 feed 源不再由固件编译工作流发布：固件那趟只管镜像，源的内容变化一律靠
 `publish-feed-repos.yml` 显式触发。
