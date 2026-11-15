@@ -72,6 +72,7 @@ jobs:
       fw_version: ${{ steps.version.outputs.fw_version }}
       file_date: ${{ steps.compile.outputs.file_date }}
       src_sha: ${{ steps.version.outputs.src_sha }}
+      src_branch: ${{ env.REPO_BRANCH }}
 
     permissions:
       actions: write    # 允许上传编译产物 artifact
@@ -346,12 +347,14 @@ jobs:
   # ------------------------------------------------------------
   # Release 发布 job：按设备各建一个 Release，并清理旧 runs / Releases
   # 由 workflow_dispatch 的 release 开关控制，默认关闭；关闭时只保留 artifact
+  # 只在 master 分支发布：标签名不含分支，bugfix 发布会与正式版共用同一设备的 keep_latest 名额
+  # 门控读 needs 而非 env：job 级 if 的可用上下文只有 github/needs/vars/inputs
   # ------------------------------------------------------------
   release:
     name: release-${{ matrix.device }}
     runs-on: ubuntu-latest
     needs: [build, package]
-    if: needs.build.result == 'success' && !cancelled() && inputs.release
+    if: needs.build.result == 'success' && !cancelled() && inputs.release && needs.build.outputs.src_branch == 'master'
 
     permissions:
       contents: write   # 允许创建 Release
@@ -393,11 +396,14 @@ jobs:
           DEVICE: ${{ matrix.device }}
           FW: ${{ needs.build.outputs.fw_version }}
           FILE_DATE: ${{ needs.build.outputs.file_date }}
+          SRC_BRANCH: ${{ needs.build.outputs.src_branch }}
+          SRC_SHA: ${{ needs.build.outputs.src_sha }}
         run: |
           # file_date 带前导下划线（沿用 artifact 名拼接约定），标签里要去掉
           ts="${FILE_DATE#_}"
           echo "release_tag=ImmortalWrt_${FW}_${DEVICE}_${ts}" >> $GITHUB_OUTPUT
           echo "ImmortalWrt ${FW} for ${DEVICE} (Airoha AN7581)" > release.txt
+          echo "源码: DenzelVincent/ponwrt@${SRC_BRANCH} (${SRC_SHA})" >> release.txt
           echo "status=success" >> $GITHUB_OUTPUT
 
       # ----------------------------------------------------------
