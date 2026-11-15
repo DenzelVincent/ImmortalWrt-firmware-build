@@ -1,7 +1,7 @@
 #!/bin/sh
 # 阶段: 编译完成后、上传 Pages 之前 (工作流步骤 "Stage feed repositories", cwd = 本仓库根目录)
 # 用途: 把各自定义 feed 已生成好的仓库 (packages.adb + *.apk) 拷成 Pages 站点目录，只搬运不重签
-# 事实来源: files/etc/apk/repositories.d/customfeeds.list —— 出厂源清单就是发布清单，不在工作流里另写一份
+# 事实来源: ponwrt 源码树 files/etc/apk/repositories.d/customfeeds.list —— 出厂源清单就是发布清单，不在工作流里另写一份
 #       Pages 部署是整站替换，清单里任何一条本次没有 packages.adb 就直接失败，否则设备端那条 URL 变 404
 # 签名: 索引与签名由 make package/index 完成 (apk mkndx --sign private-key.pem)，公钥已在固件 /etc/apk/keys/ 里
 # 用法: sh publish-feed-repos.sh [源码目录]    默认 openwrt; 输出目录固定 feed-site/
@@ -13,7 +13,7 @@ pkgs="$src_root/bin/packages"
 site="feed-site"
 list="files/etc/apk/repositories.d/customfeeds.list"
 
-# 固件工作流的 "Load custom config" 会把整个 files/ mv 进源码目录当出厂 overlay，两处都找一遍
+# 清单随 ponwrt 源码树克隆而来（源码根 files/ 就是出厂 overlay），本仓库根已不再持有，故回退路径是常态
 if [ ! -f "$list" ] && [ -f "$src_root/$list" ]; then
   list="$src_root/$list"
 fi

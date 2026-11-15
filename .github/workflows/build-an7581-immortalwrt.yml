@@ -242,7 +242,6 @@ jobs:
     # ----------------------------------------------------------
     - name: Load custom config
       run: |
-        [ -e files ] && mv files openwrt/files
         if [ ! -e "$CONFIG_FILE" ]; then
           echo "::error::缺少编译配置文件 $CONFIG_FILE（应位于本仓库根目录，检查工作流 CONFIG_FILE 与分支上的文件名是否一致）"
           exit 1

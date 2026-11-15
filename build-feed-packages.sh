@@ -1,7 +1,7 @@
 #!/bin/sh
 # 阶段: make defconfig 之后、make package/index 之前 (publish-feed-repos.yml 的 "Compile feed packages" 步骤)
 # 用途: 只编译发布集里各 feed 被 .config 选中的包，不编固件镜像
-# 事实来源: files/etc/apk/repositories.d/customfeeds.list —— 出厂源清单即发布清单，工作流里不另写一份
+# 事实来源: ponwrt 源码树 files/etc/apk/repositories.d/customfeeds.list —— 出厂源清单即发布清单，工作流里不另写一份
 # 依据: tmp/.packagedeps 第三列是相对 package/ 的目录路径，须补成 make 的 package/<路径>/compile 目标形态
 # 代价: 单包 compile 会先把依赖与工具链编出来，缓存命中也要几十分钟，省掉的是内核与镜像组装
 # 用法: sh build-feed-packages.sh [源码目录]    默认 openwrt；须从本仓库根目录执行（清单按相对路径解析）
@@ -11,12 +11,12 @@ set -e
 src_root="${1:-openwrt}"
 list_rel="files/etc/apk/repositories.d/customfeeds.list"
 
-# 清单路径先绝对化：工作流可能已把整个 files/ mv 进源码目录当出厂 overlay，两处都找一遍
+# 清单路径先绝对化：清单在 ponwrt 源码树根 files/ 下，本仓库根已不再持有，故回退路径是常态
 if [ ! -f "$list_rel" ] && [ -f "$src_root/$list_rel" ]; then
   list_rel="$src_root/$list_rel"
 fi
 if [ ! -f "$list_rel" ]; then
-  echo "::error::缺少 files/etc/apk/repositories.d/customfeeds.list（应从本仓库根目录执行本脚本）"
+  echo "::error::缺少 files/etc/apk/repositories.d/customfeeds.list（应在 ponwrt 源码树里，检查源码分支是否含该文件、以及是否从本仓库根目录执行本脚本）"
   exit 1
 fi
 list="$(cd "$(dirname "$list_rel")" && pwd)/$(basename "$list_rel")"
