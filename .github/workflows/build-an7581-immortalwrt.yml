@@ -147,12 +147,12 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         gh cache list --limit 100 --json key,id | \
-          jq -r '.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-dl-")) | .id' | \
+          jq -r '.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-dl-")) | .id' | \
           xargs -r gh cache delete
         left=$(gh cache list --limit 100 --json key | \
-          jq '[.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-dl-"))] | length')
+          jq '[.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-dl-"))] | length')
         if [ "$left" != "0" ]; then
-          echo "::error::清理后 ${{ env.CONFIG_NAME }}-dl- 前缀仍剩 $left 条缓存条目，本趟不算冷编译"
+          echo "::error::清理后 ${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-dl- 前缀仍剩 $left 条缓存条目，本趟不算冷编译"
           exit 1
         fi
 
@@ -160,9 +160,9 @@ jobs:
       uses: actions/cache@v4
       with:
         path: openwrt/dl
-        key: ${{ env.CONFIG_NAME }}-dl-${{ hashFiles('feeds.conf.default', 'an7581.config') }}
+        key: ${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-dl-${{ hashFiles('feeds.conf.default', 'an7581.config') }}
         restore-keys: |
-          ${{ env.CONFIG_NAME }}-dl-
+          ${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-dl-
 
     - name: Clear ccache
       if: ${{ inputs.clean_ccache }}
@@ -170,12 +170,12 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         gh cache list --limit 100 --json key,id | \
-          jq -r '.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-ccache-")) | .id' | \
+          jq -r '.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-ccache-")) | .id' | \
           xargs -r gh cache delete
         left=$(gh cache list --limit 100 --json key | \
-          jq '[.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-ccache-"))] | length')
+          jq '[.[] | select(.key | startswith("${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-ccache-"))] | length')
         if [ "$left" != "0" ]; then
-          echo "::error::清理后 ${{ env.CONFIG_NAME }}-ccache- 前缀仍剩 $left 条缓存条目，本趟不算冷编译"
+          echo "::error::清理后 ${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-ccache- 前缀仍剩 $left 条缓存条目，本趟不算冷编译"
           exit 1
         fi
 
@@ -183,9 +183,9 @@ jobs:
       uses: actions/cache@v4
       with:
         path: openwrt/.ccache
-        key: ${{ env.CONFIG_NAME }}-ccache-${{ hashFiles('feeds.conf.default', 'an7581.config') }}
+        key: ${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-ccache-${{ hashFiles('feeds.conf.default', 'an7581.config') }}
         restore-keys: |
-          ${{ env.CONFIG_NAME }}-ccache-
+          ${{ env.CONFIG_NAME }}-${{ env.REPO_BRANCH }}-ccache-
 
     # ----------------------------------------------------------
     # 步骤 6: 执行 add-feed-sources.sh 增删第三方 feed 源
