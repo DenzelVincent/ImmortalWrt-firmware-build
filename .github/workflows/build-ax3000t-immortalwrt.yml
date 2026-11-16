@@ -40,11 +40,11 @@ env:
   # defconfig 自检的期望符号，换 target/设备时与上面成对改
   EXPECT_TARGET: CONFIG_TARGET_mediatek_mt7981
   EXPECT_DEVICE: CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_xiaomi_mi-router-ax3000t
-  # 两个自定义脚本 = 流程里的两个插入点，执行阶段见各行注释
+  # 两个自定义脚本（scripts/firmware/）= 流程里的两个插入点，执行阶段见各行注释
   # 1) ./scripts/feeds update -a 之前 —— 增删第三方 feed 源
-  SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
+  SCRIPT_ADD_FEED_SOURCES: scripts/firmware/add-feed-sources.sh
   # 2) make defconfig 之后 —— 改固件出厂默认值 (默认 IP、DHCP 等)
-  SCRIPT_SET_FIRMWARE_DEFAULTS: set-firmware-defaults.sh
+  SCRIPT_SET_FIRMWARE_DEFAULTS: scripts/firmware/set-firmware-defaults.sh
   # 编译环境时区
   TZ: Asia/Shanghai
   # 可选覆盖：本仓库根存在该文件时才覆盖源码自带 feeds
