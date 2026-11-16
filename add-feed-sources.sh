@@ -1,9 +1,9 @@
 #!/bin/sh
 # 阶段: ./scripts/feeds update -a 之前 (工作流步骤 "Load custom feeds", cwd = openwrt/)
-# 用途: 往 feeds.conf.default 追加本项目需要的增量 feed 源（mosdns / lucky / airoha_npu）
+# 用途: 往 feeds.conf.default 追加本项目需要的增量 feed 源（mosdns / lucky）
 # 口径: 增量包一律做成 feed 声明, 不 clone 进 package/ —— clone 进去的包归进 base 仓库, 没法单独发布
 # 约束: feed 名只能用字母数字下划线, 带 `-` 会让 feeds update 报语法错误 (^<ref> 段里的连字符不受此限)
-# 版本锁: 除自维护的 airoha_npu 裸拉最新主分支外, 一律锁完整 commit sha (^<40位sha>), 不锁 tag、不跟分支
+# 版本锁: 一律锁完整 commit sha (^<40位sha>), 不锁 tag、不跟分支、不在 CI 里动态取最新
 #       tag 锁不住: scripts/feeds 的 init_commit = clone --depth 1 → fetch --depth=1 <ref> → checkout <ref>,
 #       末步按名字检出, 只有 tag 恰好指向被克隆的那个 commit 才碰巧成功, 上游一推新提交就报 pathspec
 #       sha 由 fetch 按对象取、checkout 按对象解析, 与 tip 位置无关
@@ -34,12 +34,8 @@ fi
 grep -q '^src-git lucky ' feeds.conf.default || \
   echo 'src-git lucky https://github.com/gdy666/luci-app-lucky.git^b07f65c28bb5fa3da1fea4b8af5ce24a1488e79a' >>feeds.conf.default
 
-# Airoha NPU 管理界面 (自维护): 裸拉最新提交不锁 sha; 升级靠打 tag 时 bump PKG_VERSION/PKG_RELEASE, apk 只比版本号不比内容
-grep -q '^src-git airoha_npu ' feeds.conf.default || \
-  echo 'src-git airoha_npu https://github.com/DenzelVincent/luci-app-airoha-npu.git' >>feeds.conf.default
-
+# airoha_npu 不在本脚本追加: 它的裸拉 src-git 行由 ponwrt master/bugfix 的 feeds.conf.default 自带
 # 断言 mosdns/lucky 的 ^ref 都是 40 位十六进制 sha —— 手写成 tag 名或短 sha 会红在 feeds update, 在这里先拦住
-# airoha_npu 自维护、裸拉不锁, 不参与该断言
 bad=""
 for feed in mosdns lucky; do
   ref=$(awk -v n="$feed" '$1 == "src-git" && $2 == n { sub(/.*\^/, "", $3); print $3 }' feeds.conf.default)

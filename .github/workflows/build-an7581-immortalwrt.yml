@@ -48,7 +48,7 @@ env:
   # 子目标（编译产物路径使用）；设备名映射登记在 organize-firmware.sh 的 device_label
   SUBTARGET: an7581
   # 四个自定义脚本 = 流程里的四个插入点，执行阶段见各行注释
-  # 1) ./scripts/feeds update -a 之前 —— 增删增量 feed 源（mosdns / lucky / airoha_npu）
+  # 1) ./scripts/feeds update -a 之前 —— 增删增量 feed 源（mosdns / lucky）
   SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
   # 2) ./scripts/feeds install -a 之后 —— 修 feed 包里 LuCI 表单「值等于默认值就删」的缺陷
   SCRIPT_PATCH_FEED_PACKAGES: patch-feed-packages.sh
