@@ -28,10 +28,11 @@ env:
   CONFIG_FILE: an7581.config
   CONFIG_NAME: an7581
   # 四个自定义脚本：追加 feed 源 → 修 feed 包里的 LuCI 缺陷 → 只编发布集的包 → 拷成 Pages 站点目录
-  SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
-  SCRIPT_PATCH_FEED_PACKAGES: patch-feed-packages.sh
-  SCRIPT_BUILD_FEED_PACKAGES: build-feed-packages.sh
-  SCRIPT_PUBLISH_FEED_REPOS: publish-feed-repos.sh
+  # 前两个与固件工作流共用 scripts/firmware/，后两个是发布专属，在 scripts/publish/
+  SCRIPT_ADD_FEED_SOURCES: scripts/firmware/add-feed-sources.sh
+  SCRIPT_PATCH_FEED_PACKAGES: scripts/firmware/patch-feed-packages.sh
+  SCRIPT_BUILD_FEED_PACKAGES: scripts/publish/build-feed-packages.sh
+  SCRIPT_PUBLISH_FEED_REPOS: scripts/publish/publish-feed-repos.sh
   # 编译环境时区
   TZ: Asia/Shanghai
   # 可选覆盖：本仓库根存在该文件时才覆盖源码自带 feeds

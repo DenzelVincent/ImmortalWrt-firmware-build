@@ -45,17 +45,17 @@ env:
   # 设备配置文件（复制成 openwrt/.config）与缓存 key 前缀；改名须同步两条 cache key 里的文件名
   CONFIG_FILE: an7581.config
   CONFIG_NAME: an7581
-  # 子目标（编译产物路径使用）；设备名映射登记在 organize-firmware.sh 的 device_label
+  # 子目标（编译产物路径使用）；设备名映射登记在 scripts/firmware/organize-firmware.sh 的 device_label
   SUBTARGET: an7581
-  # 四个自定义脚本 = 流程里的四个插入点，执行阶段见各行注释
+  # 四个自定义脚本（scripts/firmware/）= 流程里的四个插入点，执行阶段见各行注释
   # 1) ./scripts/feeds update -a 之前 —— 增删增量 feed 源（mosdns / lucky）
-  SCRIPT_ADD_FEED_SOURCES: add-feed-sources.sh
+  SCRIPT_ADD_FEED_SOURCES: scripts/firmware/add-feed-sources.sh
   # 2) ./scripts/feeds install -a 之后 —— 修 feed 包里 LuCI 表单「值等于默认值就删」的缺陷
-  SCRIPT_PATCH_FEED_PACKAGES: patch-feed-packages.sh
+  SCRIPT_PATCH_FEED_PACKAGES: scripts/firmware/patch-feed-packages.sh
   # 3) make defconfig 之后 —— 改固件出厂默认值 (默认 IP、DHCP 等)
-  SCRIPT_SET_FIRMWARE_DEFAULTS: set-firmware-defaults.sh
+  SCRIPT_SET_FIRMWARE_DEFAULTS: scripts/firmware/set-firmware-defaults.sh
   # 4) make 之后 —— 按设备归集镜像，输出设备清单供 package/release job 做 matrix
-  SCRIPT_ORGANIZE_FIRMWARE: organize-firmware.sh
+  SCRIPT_ORGANIZE_FIRMWARE: scripts/firmware/organize-firmware.sh
   # 编译环境时区
   TZ: Asia/Shanghai
   # 可选覆盖：本仓库根存在该文件时才覆盖源码自带 feeds

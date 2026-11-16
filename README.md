@@ -156,12 +156,15 @@ USB 内核模块与文件系统模块本来就是 `=m`，且 HG5382A 的 `DEVICE
 │   ├── an7581.config              # AN7581 全设备配置（menuconfig 完整展开结果）
 │   ├── an7583.config              # AN7583 全设备配置（menuconfig 完整展开结果，本分支无对应编译目标）
 │   └── release.config             # 发布配置增量
-├── add-feed-sources.sh            # 插入点 1（两个工作流）：feeds update 之前，增删第三方 feed 源
-├── patch-feed-packages.sh         # 插入点 2（两个工作流）：feeds install 之后，修 feed 包里的 LuCI 表单缺陷
-├── set-firmware-defaults.sh       # 插入点 3（固件编译工作流）：make defconfig 之后，改固件出厂默认值
-├── build-feed-packages.sh         # 插入点 4（发布工作流）：只编发布集里被选中的 feed 包
-├── publish-feed-repos.sh          # 插入点 5（发布工作流）：把各 feed 的已签名仓库拷成 Pages 站点
-└── organize-firmware.sh           # 插入点 6（固件编译工作流）：make 之后，按设备归集镜像并输出设备清单
+└── scripts/
+    ├── firmware/                  # 固件编译脚本（前两个插入点两个工作流共用）
+    │   ├── add-feed-sources.sh    # 插入点 1（两个工作流）：feeds update 之前，增删第三方 feed 源
+    │   ├── patch-feed-packages.sh # 插入点 2（两个工作流）：feeds install 之后，修 feed 包里的 LuCI 表单缺陷
+    │   ├── set-firmware-defaults.sh # 插入点 3（固件编译工作流）：make defconfig 之后，改固件出厂默认值
+    │   └── organize-firmware.sh   # 插入点 6（固件编译工作流）：make 之后，按设备归集镜像并输出设备清单
+    └── publish/                   # app 发布脚本
+        ├── build-feed-packages.sh # 插入点 4（发布工作流）：只编发布集里被选中的 feed 包
+        └── publish-feed-repos.sh  # 插入点 5（发布工作流）：把各 feed 的已签名仓库拷成 Pages 站点
 ```
 
 > 设备配置按型号命名放在仓库根，是为了和编译期真正的 `openwrt/.config` 区分开：
@@ -177,7 +180,7 @@ USB 内核模块与文件系统模块本来就是 `=m`，且 HG5382A 的 `DEVICE
 
 ## 脚本说明
 
-六个脚本对应编译流程里的六个插入点，工作流按 `env` 段的 `SCRIPT_ADD_FEED_SOURCES` /
+六个脚本（`scripts/firmware/` 四个、`scripts/publish/` 两个）对应编译流程里的六个插入点，工作流按 `env` 段的 `SCRIPT_ADD_FEED_SOURCES` /
 `SCRIPT_PATCH_FEED_PACKAGES` / `SCRIPT_SET_FIRMWARE_DEFAULTS` / `SCRIPT_BUILD_FEED_PACKAGES` /
 `SCRIPT_PUBLISH_FEED_REPOS` / `SCRIPT_ORGANIZE_FIRMWARE` 调用（固件编译工作流用 1/2/3/6，发布工作流用 1/2/4/5）。
 文件名写"做什么"，执行阶段写在各脚本的头注释里；各编译目标共用同一批脚本，改动对所有产出生效。
@@ -437,7 +440,7 @@ git clone --depth 1 -b master https://github.com/DenzelVincent/ponwrt.git
 cd ponwrt
 
 # 增删第三方 feed (mosdns / lucky / airoha_npu 都由编译仓库的 add-feed-sources.sh 统一处理，必须在 feeds update 之前执行)
-sh /path/to/ImmortalWrt-firmware-build/add-feed-sources.sh
+sh /path/to/ImmortalWrt-firmware-build/scripts/firmware/add-feed-sources.sh
 
 # 更新并安装 feeds（feed 锁的是 commit sha；改过 pin 要先 rm -rf feeds/<name>/，
 # 带 ^ref 的 feed 在 scripts/feeds 里是"给了 ref 就不 update"，不删就还是旧 commit 的内容）
@@ -445,7 +448,7 @@ sh /path/to/ImmortalWrt-firmware-build/add-feed-sources.sh
 ./scripts/feeds install -a
 
 # 修 feed 包里的 LuCI 表单缺陷（必须在 install 之后；之后只要再跑一次 feeds update 就被冲掉，要重新跑这步）
-sh /path/to/ImmortalWrt-firmware-build/patch-feed-packages.sh
+sh /path/to/ImmortalWrt-firmware-build/scripts/firmware/patch-feed-packages.sh
 
 # 选择配置（按上表选对应那份）
 cp an7581.config .config
