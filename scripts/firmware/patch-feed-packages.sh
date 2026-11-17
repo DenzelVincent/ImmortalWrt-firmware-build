@@ -1,16 +1,10 @@
 #!/bin/sh
 # 阶段: ./scripts/feeds install -a 之后、make defconfig 之前 (工作流步骤 "Install feeds" 末尾, cwd = openwrt/)
-# 用途: 修 LuCI 表单"提交值等于控件默认值就当没填"这一类缺陷, 以及 mosdns ad_source 的配套声明
+# 用途: 修 LuCI 表单"提交值等于控件默认值就当没填"这一类缺陷, 以及 mosdns 广告源 / 概览端口行的定制
 #
 # 根因: openwrt/luci commit 974b5864e05e 往 CBIAbstractValue.parse() 的空值判据里加了 fval == this.default,
-#       于是"等于默认值"和"留空"共用同一条 remove() 分支。后果两条, 得两条补丁:
-#       1) 已写进 UCI 的值, 之后每次点"保存并应用"都被重新删一遍 —— remove 在 !isEqual(cval, fval) 之前, 与现值无关
-#       2) mosdns 的 ad_source 声明了 o.default = 'geosite.dat', 全新刷机后不动下拉框直接保存 => 键压根不落盘
-#       第 2 条才致命: init 对空 ad_source 的兜底是 /var/mosdns/disable-ads.txt, 而该文件只在 ad_source 含
-#       geosite.dat 时才由 geo2txt 生成, 于是 adlist 插件 init 失败 -> 开机崩溃循环(设备实测)
-#
-# 分工: form.js 管第 1 条(全部 LuCI 页面共用这个 parse), rmempty=false 管第 2 条(app 自己的声明)
-#       只补第 1 层仍会崩 —— 全新刷机(UCI 无键)与"选了别的源又选回默认值"两种情况 cval != fval, 照旧走 remove()
+#       于是"等于默认值"和"留空"共用同一条 remove() 分支:
+#       已写进 UCI 的值, 之后每次点"保存并应用"都被重新删一遍 —— remove 在 !isEqual(cval, fval) 之前, 与现值无关
 #       Flag 的 parse 有同款无条件 remove, 但布尔开关"无键=关"是约定, 且 mosdns 里 default=enabled 的那几个
 #       本来就带了 rmempty=false, 所以不动它, 免得扩大语义变更面
 #
@@ -40,25 +34,54 @@ if tr -d ' \t' <"$form_js" | grep -qF '(fval==this.default&&(this.optional||this
   exit 1
 fi
 
-# ---------- 2) basic.js: ad_source 显式不 rmempty, 让默认值也真的写进 UCI ----------
+# ---------- 2) basic.js: 去掉 v2ray-geosite 选项与默认值, 接入自建聚合清单 ----------
+# geosite.dat 作为 ad_source 只多产一份 category-ads-all (geo2txt 里由 ad_source 是否含它决定),
+# 其他 geosite_cn/apple 等基础文件与 adblock 无关, 删掉不影响解析链路
+# 默认值一并删掉: 留着它而删选项会出现"下拉框没有、UCI 却仍是 geosite.dat"的隐形默认
+# 聚合清单: adblock-dns-aggregator 每周发布到 output 分支, mosdns/lite.txt = cn + HaGeZi Light,
+# 头部 # 注释 + 纯域名, 正合 adblock_set (解析时 RemoveComment "#");
+# update_adlist 按 basename(lite.txt) 落地到 /etc/mosdns/rule/adlist, 与现有源的 basename 不冲突;
+# o.value 的第二参数只是下拉框/已选列表的显示别名, UCI 里存的仍是 URL
 [ -f "$ad_js" ] || {
   echo "::error::找不到 $ad_js（mosdns feed 的包目录结构变了？）"
   exit 1
 }
 
-anchor="o.default = 'geosite.dat';"
-if grep -qF "$anchor" "$ad_js"; then
-  # 幂等: 下一行已经是 rmempty 就不再插第二遍
-  grep -A1 -F "$anchor" "$ad_js" | grep -qF 'o.rmempty = false;' ||
-    sed -i "s@^\([[:space:]]*\)o\.default = 'geosite\.dat';@\1o.default = 'geosite.dat';\n\1o.rmempty = false;@" "$ad_js"
-  # sed 只认行首空白, 上面那条 grep 判定用的是相邻行, 两者都得成立才算打上
-  grep -A1 -F "$anchor" "$ad_js" | grep -qF 'o.rmempty = false;' || {
-    echo "::error::$anchor 之后没跟上 o.rmempty = false;（缩进或写法与锚点不符），ad_source 仍会不落盘"
-    exit 1
-  }
-else
-  echo "::warning::basic.js 没匹配到 ad_source 的默认值行（上游可能改了写法），不动它"
+agg_url='https://raw.githubusercontent.com/DenzelVincent/adblock-dns-aggregator/output/mosdns/lite.txt'
+agg_alias='adblock-dns-aggregator (lite)'
+agg_tmp=$(mktemp) || {
+  echo "::error::mktemp 失败，无法改写 basic.js"
+  exit 1
+}
+
+# 先删 geosite 选项与默认值 (grep -vF 只认整行固定串, 不碰其他 o.value/o.default)
+grep -vF -e "o.value('geosite.dat', 'v2ray-geosite');" \
+          -e "o.default = 'geosite.dat';" "$ad_js" > "$agg_tmp" && cat "$agg_tmp" > "$ad_js"
+
+# 再在 anti-AD 选项后插入聚合清单; URL 里的括号在 sed BRE 里是分组语法, 用 awk 按行内容插
+if ! grep -qF "$agg_url" "$ad_js"; then
+  awk -v url="$agg_url" -v alias="$agg_alias" '
+    !done && index($0, "anti-ad-domains.txt") {
+      print
+      match($0, /^[ \t]*/)
+      print substr($0, 1, RLENGTH) "o.value(\047" url "\047, \047" alias "\047);"
+      done = 1
+      next
+    }
+    { print }
+  ' "$ad_js" > "$agg_tmp" && cat "$agg_tmp" > "$ad_js"
 fi
+
+rm -f "$agg_tmp"
+
+grep -qF 'v2ray-geosite' "$ad_js" && {
+  echo "::error::basic.js 里 v2ray-geosite 选项未删掉（上游改了写法？）"
+  exit 1
+}
+grep -qF "$agg_url" "$ad_js" || {
+  echo "::error::basic.js 插入聚合清单选项失败（没匹配到 anti-AD 选项行？）"
+  exit 1
+}
 
 # ---------- 3) 29_ports.js: 端口状态行改 flex 均分, 间距只由容器控制 ----------
 # 原样式是 grid auto-fit + justify-items:center: 卡片固定 100px, 靠 1fr 轨道剩余空间居中,
@@ -83,40 +106,43 @@ grep -qF 'justify-content:space-evenly' "$ports_js" || {
   exit 1
 }
 
-# ---------- 4) basic.js: ad_source 下拉框追加自建聚合清单 (lite 档) ----------
-# 自建 adblock-dns-aggregator 每周发布到 output 分支: mosdns/lite.txt = cn + HaGeZi Light,
-# 头部 # 注释 + 纯域名, 正合 adblock_set; update_adlist 按 basename(lite.txt) 落地到
-# /etc/mosdns/rule/adlist, 与现有 anti-AD / Cats-Team / neodevhost 的 basename 不冲突
-# 别名只影响下拉框与已选列表的显示, UCI 里存的仍是 URL
-# 用 awk 按行内容插入而非 sed 长 URL 模式: URL 里的括号在 BRE 里是分组语法, 会失配
-agg_url='https://raw.githubusercontent.com/DenzelVincent/adblock-dns-aggregator/output/mosdns/lite.txt'
-agg_alias='adblock-dns-aggregator (lite)'
-agg_anchor='anti-ad-domains.txt'
+# ---------- 4) mosdns.uc: 广告源全空时自己产兜底文件, 不依赖开机前是否存在 ----------
+# geosite 默认值移除后, "启用了 adblock 但一个源都没选"变得可达: get_adlist 此刻输出为空,
+# init.d 回落到 /var/mosdns/disable-ads.txt, 而该文件在 tmpfs 开机后只有 adblock=0 的分支才写,
+# 于是 adblock_set 指到不存在的文件 -> 启动失败。空列表时直接写空文件并返回它, 兜底闭环
+uc_uc=package/feeds/mosdns/luci-app-mosdns/root/usr/share/mosdns/mosdns.uc
+[ -f "$uc_uc" ] || {
+  echo "::error::找不到 $uc_uc（mosdns feed 的包目录结构变了？）"
+  exit 1
+}
 
-if grep -qF "$agg_url" "$ad_js"; then
-  : # 幂等: 已加过
-elif grep -qF "$agg_anchor" "$ad_js"; then
-  agg_tmp=$(mktemp) || {
-    echo "::error::mktemp 失败，无法插入聚合清单选项"
+if ! grep -qF "push(adlist, '/var/mosdns/disable-ads.txt')" "$uc_uc"; then
+  grep -qF 'print(join("\n", adlist)' "$uc_uc" || {
+    echo "::error::mosdns.uc 没匹配到 get_adlist 的输出行（上游可能改了写法），兜底文件未生成"
     exit 1
   }
-  awk -v url="$agg_url" -v alias="$agg_alias" '
-    !done && index($0, "anti-ad-domains.txt") {
-      print
+  uc_tmp=$(mktemp) || {
+    echo "::error::mktemp 失败，无法改写 mosdns.uc"
+    exit 1
+  }
+  awk '
+    !done && index($0, "print(join(\"\\n\", adlist)") {
       match($0, /^[ \t]*/)
-      print substr($0, 1, RLENGTH) "o.value(\047" url "\047, \047" alias "\047);"
+      ind = substr($0, 1, RLENGTH)
+      print ind "if (length(adlist) === 0) {"
+      print ind "\twritefile(\047/var/mosdns/disable-ads.txt\047, \047\047);"
+      print ind "\tpush(adlist, \047/var/mosdns/disable-ads.txt\047);"
+      print ind "}"
       done = 1
-      next
     }
     { print }
-  ' "$ad_js" > "$agg_tmp" && cat "$agg_tmp" > "$ad_js"
-  rm -f "$agg_tmp"
-  grep -qF "$agg_url" "$ad_js" || {
-    echo "::error::basic.js 插入聚合清单选项失败（锚点行写法与预期不符）"
-    exit 1
-  }
-else
-  echo "::warning::basic.js 没匹配到 anti-AD 选项锚点（上游可能改了写法），聚合清单未加入下拉框"
+  ' "$uc_uc" > "$uc_tmp" && cat "$uc_tmp" > "$uc_uc"
+  rm -f "$uc_tmp"
 fi
 
-echo "feed 补丁完成: form.js 已限定删除条件, ad_source 已强制落盘, 端口行已改 flex 均分, 聚合清单已入下拉框"
+grep -qF "push(adlist, '/var/mosdns/disable-ads.txt')" "$uc_uc" || {
+  echo "::error::mosdns.uc 空列表兜底未写入"
+  exit 1
+}
+
+echo "feed 补丁完成: form.js 已限定删除条件, v2ray-geosite 已移除, 聚合清单已入下拉框, 端口行已改 flex 均分, 空广告源已有兜底"
