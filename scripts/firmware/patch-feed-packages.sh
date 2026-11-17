@@ -85,10 +85,12 @@ grep -qF "$agg_url" "$ad_js" || {
   exit 1
 }
 
-# ---------- 3) 29_ports.js: 端口状态行改 flex 均分, 间距只由容器控制 ----------
+# ---------- 3) 29_ports.js: 端口状态行改 flex 均分, 卡片固定 100px ----------
 # 原样式是 grid auto-fit + justify-items:center: 卡片固定 100px, 靠 1fr 轨道剩余空间居中,
 # 改成 flex + space-evenly 后各卡间距严格相等, 窄屏自动折行; 不写主题 .ifacebox,
 # 避免外溢到「网络→接口」页的接口卡和概览「网络」区块
+# 必须带 !important: Argon 主题对端口行有页面级 :has() 规则 (display:grid !important,
+# 卡片 width:auto/min-width:0/margin:0 !important), 内联不加权就整段被吃掉, 卡片会被拉宽铺满
 ports_js=package/feeds/luci/luci-mod-status/htdocs/luci-static/resources/view/status/include/29_ports.js
 [ -f "$ports_js" ] || {
   echo "::error::找不到 $ports_js（luci feed 的包目录结构变了？）"
@@ -96,15 +98,28 @@ ports_js=package/feeds/luci/luci-mod-status/htdocs/luci-static/resources/view/st
 }
 
 old='display:grid;grid-template-columns:repeat(auto-fit, minmax(100px, 1fr));margin-bottom:1em;align-items:center;justify-items:center;text-align:center'
-new='display:flex;flex-wrap:wrap;justify-content:space-evenly;align-items:center;column-gap:8px;margin-bottom:1em;text-align:center'
+old_flex='display:flex;flex-wrap:wrap;justify-content:space-evenly;align-items:center;column-gap:8px;margin-bottom:1em;text-align:center'
+new='display:flex!important;flex-wrap:wrap!important;justify-content:space-evenly!important;align-items:center!important;column-gap:8px;margin-bottom:1em!important;text-align:center'
+box_old='margin:.25em;width:100px'
+box_new='margin:.25em!important;width:100px!important;min-width:100px!important;max-width:100px!important'
 
-# 幂等: 已是新样式时 old 锚点不存在, 直接跳到验收
+# 幂等: 未打过的 grid 原样式 / 上一版无 !important 的 flex 样式, 两种都要能升级到 new
 if grep -qF "$old" "$ports_js"; then
   sed -i "s@$old@$new@" "$ports_js"
+elif grep -qF "$old_flex" "$ports_js"; then
+  sed -i "s@$old_flex@$new@" "$ports_js"
 fi
 
-grep -qF 'justify-content:space-evenly' "$ports_js" || {
+if grep -qF "$box_old" "$ports_js"; then
+  sed -i "s@$box_old@$box_new@" "$ports_js"
+fi
+
+grep -qF 'justify-content:space-evenly!important' "$ports_js" || {
   echo "::error::29_ports.js 容器样式锚点失配（上游换了写法？），端口行布局未生效"
+  exit 1
+}
+grep -qF 'width:100px!important' "$ports_js" || {
+  echo "::error::29_ports.js 卡片宽度锚点失配（上游换了写法？），卡片仍会被主题拉宽"
   exit 1
 }
 
