@@ -60,4 +60,27 @@ else
   echo "::warning::basic.js 没匹配到 ad_source 的默认值行（上游可能改了写法），不动它"
 fi
 
-echo "feed 补丁完成: form.js 已限定删除条件, ad_source 已强制落盘"
+# ---------- 3) 29_ports.js: 端口状态行改 flex 均分, 间距只由容器控制 ----------
+# 原样式是 grid auto-fit + justify-items:center: 卡片固定 100px, 靠 1fr 轨道剩余空间居中,
+# 改成 flex + space-evenly 后各卡间距严格相等, 窄屏自动折行; 不写主题 .ifacebox,
+# 避免外溢到「网络→接口」页的接口卡和概览「网络」区块
+ports_js=package/feeds/luci/luci-mod-status/htdocs/luci-static/resources/view/status/include/29_ports.js
+[ -f "$ports_js" ] || {
+  echo "::error::找不到 $ports_js（luci feed 的包目录结构变了？）"
+  exit 1
+}
+
+old='display:grid;grid-template-columns:repeat(auto-fit, minmax(100px, 1fr));margin-bottom:1em;align-items:center;justify-items:center;text-align:center'
+new='display:flex;flex-wrap:wrap;justify-content:space-evenly;align-items:center;column-gap:8px;margin-bottom:1em;text-align:center'
+
+# 幂等: 已是新样式时 old 锚点不存在, 直接跳到验收
+if grep -qF "$old" "$ports_js"; then
+  sed -i "s@$old@$new@" "$ports_js"
+fi
+
+grep -qF 'justify-content:space-evenly' "$ports_js" || {
+  echo "::error::29_ports.js 容器样式锚点失配（上游换了写法？），端口行布局未生效"
+  exit 1
+}
+
+echo "feed 补丁完成: form.js 已限定删除条件, ad_source 已强制落盘, 端口行已改 flex 均分"
