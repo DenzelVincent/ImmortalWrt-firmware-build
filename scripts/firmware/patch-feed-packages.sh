@@ -34,10 +34,9 @@ if tr -d ' \t' <"$form_js" | grep -qF '(fval==this.default&&(this.optional||this
   exit 1
 fi
 
-# ---------- 2) basic.js: 去掉 v2ray-geosite 选项与默认值, 接入自建聚合清单 ----------
-# geosite.dat 作为 ad_source 只多产一份 category-ads-all (geo2txt 里由 ad_source 是否含它决定),
-# 其他 geosite_cn/apple 等基础文件与 adblock 无关, 删掉不影响解析链路
-# 默认值一并删掉: 留着它而删选项会出现"下拉框没有、UCI 却仍是 geosite.dat"的隐形默认
+# ---------- 2) basic.js: 去掉 ad_source 默认值 v2ray-geosite, 接入自建聚合清单 ----------
+# 只删 o.default 不删选项: v2ray-geosite 留在下拉框里仍可手动选 (选中时 geo2txt 照旧产
+# category-ads-all), 但新装/未改动的配置不再被隐式写成 geosite.dat
 # 聚合清单: adblock-dns-aggregator 每周发布到 output 分支, mosdns/lite.txt = cn + HaGeZi Light,
 # 头部 # 注释 + 纯域名, 正合 adblock_set (解析时 RemoveComment "#");
 # update_adlist 按 basename(lite.txt) 落地到 /etc/mosdns/rule/adlist, 与现有源的 basename 不冲突;
@@ -54,9 +53,8 @@ agg_tmp=$(mktemp) || {
   exit 1
 }
 
-# 先删 geosite 选项与默认值 (grep -vF 只认整行固定串, 不碰其他 o.value/o.default)
-grep -vF -e "o.value('geosite.dat', 'v2ray-geosite');" \
-          -e "o.default = 'geosite.dat';" "$ad_js" > "$agg_tmp" && cat "$agg_tmp" > "$ad_js"
+# 删默认值行 (grep -vF 只认整行固定串, 不碰 o.value 选项)
+grep -vF -e "o.default = 'geosite.dat';" "$ad_js" > "$agg_tmp" && cat "$agg_tmp" > "$ad_js"
 
 # 再在 anti-AD 选项后插入聚合清单; URL 里的括号在 sed BRE 里是分组语法, 用 awk 按行内容插
 if ! grep -qF "$agg_url" "$ad_js"; then
@@ -74,8 +72,12 @@ fi
 
 rm -f "$agg_tmp"
 
-grep -qF 'v2ray-geosite' "$ad_js" && {
-  echo "::error::basic.js 里 v2ray-geosite 选项未删掉（上游改了写法？）"
+grep -qF "o.default = 'geosite.dat';" "$ad_js" && {
+  echo "::error::basic.js 里 ad_source 的默认值仍未删掉（上游改了写法？）"
+  exit 1
+}
+grep -qF "o.value('geosite.dat', 'v2ray-geosite');" "$ad_js" || {
+  echo "::error::basic.js 里 v2ray-geosite 选项丢了（本应保留）"
   exit 1
 }
 grep -qF "$agg_url" "$ad_js" || {
@@ -145,4 +147,4 @@ grep -qF "push(adlist, '/var/mosdns/disable-ads.txt')" "$uc_uc" || {
   exit 1
 }
 
-echo "feed 补丁完成: form.js 已限定删除条件, v2ray-geosite 已移除, 聚合清单已入下拉框, 端口行已改 flex 均分, 空广告源已有兜底"
+echo "feed 补丁完成: form.js 已限定删除条件, v2ray-geosite 默认值已移除, 聚合清单已入下拉框, 端口行已改 flex 均分, 空广告源已有兜底"
