@@ -98,24 +98,17 @@ ports_js=package/feeds/luci/luci-mod-status/htdocs/luci-static/resources/view/st
 }
 
 old='display:grid;grid-template-columns:repeat(auto-fit, minmax(100px, 1fr));margin-bottom:1em;align-items:center;justify-items:center;text-align:center'
-old_flex='display:flex;flex-wrap:wrap;justify-content:space-evenly;align-items:center;column-gap:8px;margin-bottom:1em;text-align:center'
 new='display:flex!important;flex-wrap:wrap!important;justify-content:space-evenly!important;align-items:center!important;column-gap:8px;margin-bottom:1em!important;text-align:center'
 box_old='margin:.25em;width:100px'
-box_100='margin:.25em!important;width:100px!important;min-width:100px!important;max-width:100px!important'
 box_new='margin:.25em!important;width:150px!important;min-width:150px!important;max-width:150px!important'
 
-# 幂等: 未打过的 grid 原样式 / 上一版无 !important 的 flex 样式, 两种都要能升级到 new
+# 每次构建 feeds update -a 都会重置回上游源码, 只会遇到这一种原始形态
 if grep -qF "$old" "$ports_js"; then
   sed -i "s@$old@$new@" "$ports_js"
-elif grep -qF "$old_flex" "$ports_js"; then
-  sed -i "s@$old_flex@$new@" "$ports_js"
 fi
 
-# 卡片宽度有 100px 的两个历史版本(原始 / 已带 !important), 都升到 150px
 if grep -qF "$box_old" "$ports_js"; then
   sed -i "s@$box_old@$box_new@" "$ports_js"
-elif grep -qF "$box_100" "$ports_js"; then
-  sed -i "s@$box_100@$box_new@" "$ports_js"
 fi
 
 grep -qF 'justify-content:space-evenly!important' "$ports_js" || {
