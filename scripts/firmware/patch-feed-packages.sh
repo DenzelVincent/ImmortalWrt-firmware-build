@@ -83,4 +83,40 @@ grep -qF 'justify-content:space-evenly' "$ports_js" || {
   exit 1
 }
 
-echo "feed 补丁完成: form.js 已限定删除条件, ad_source 已强制落盘, 端口行已改 flex 均分"
+# ---------- 4) basic.js: ad_source 下拉框追加自建聚合清单 (lite 档) ----------
+# 自建 adblock-dns-aggregator 每周发布到 output 分支: mosdns/lite.txt = cn + HaGeZi Light,
+# 头部 # 注释 + 纯域名, 正合 adblock_set; update_adlist 按 basename(lite.txt) 落地到
+# /etc/mosdns/rule/adlist, 与现有 anti-AD / Cats-Team / neodevhost 的 basename 不冲突
+# 别名只影响下拉框与已选列表的显示, UCI 里存的仍是 URL
+# 用 awk 按行内容插入而非 sed 长 URL 模式: URL 里的括号在 BRE 里是分组语法, 会失配
+agg_url='https://raw.githubusercontent.com/DenzelVincent/adblock-dns-aggregator/output/mosdns/lite.txt'
+agg_alias='adblock-dns-aggregator (lite)'
+agg_anchor='anti-ad-domains.txt'
+
+if grep -qF "$agg_url" "$ad_js"; then
+  : # 幂等: 已加过
+elif grep -qF "$agg_anchor" "$ad_js"; then
+  agg_tmp=$(mktemp) || {
+    echo "::error::mktemp 失败，无法插入聚合清单选项"
+    exit 1
+  }
+  awk -v url="$agg_url" -v alias="$agg_alias" '
+    !done && index($0, "anti-ad-domains.txt") {
+      print
+      match($0, /^[ \t]*/)
+      print substr($0, 1, RLENGTH) "o.value(\047" url "\047, \047" alias "\047);"
+      done = 1
+      next
+    }
+    { print }
+  ' "$ad_js" > "$agg_tmp" && cat "$agg_tmp" > "$ad_js"
+  rm -f "$agg_tmp"
+  grep -qF "$agg_url" "$ad_js" || {
+    echo "::error::basic.js 插入聚合清单选项失败（锚点行写法与预期不符）"
+    exit 1
+  }
+else
+  echo "::warning::basic.js 没匹配到 anti-AD 选项锚点（上游可能改了写法），聚合清单未加入下拉框"
+fi
+
+echo "feed 补丁完成: form.js 已限定删除条件, ad_source 已强制落盘, 端口行已改 flex 均分, 聚合清单已入下拉框"
