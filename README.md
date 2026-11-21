@@ -186,7 +186,7 @@ USB 内核模块与文件系统模块本来就是 `=m`，且 HG5382A 的 `DEVICE
 文件名写"做什么"，执行阶段写在各脚本的头注释里；各编译目标共用同一批脚本，改动对所有产出生效。
 
 `organize-firmware.sh` 里的 `device_label` 是产物命名的唯一登记处：profile slug → 设备名（大写去品牌），
-artifact 名使用平台级 `AN7581` 后缀（单份存储全部设备），Release 标签与旧 Release 清理的 `delete_tag_pattern` 共用设备名这套字面量。
+artifact 名按设备各一个包（`ImmortalWrt_<版本>_<设备>_<时间戳>`），Release 标签与旧 Release 清理的 `delete_tag_pattern` 共用设备名这套字面量。
 新增设备必须在此补一行，未登记即报错退出，不静默跳过。它按 `bin/targets/airoha/<subtarget>/profiles.json`
 的 `images[].name` 精确名单归集，不用前缀匹配——否则 `nokia_xg-040g-md-ubi` 会把 `-ubi-usb-sfp` 变体的镜像一起吞进来。
 
@@ -356,12 +356,13 @@ openssl ec -in private-key.pem -pubout -out public-key.pem
 11. 预下载软件包源码 (`make download`)
 12. 编译固件：全并发 → 同级并发重试 → 才降级 `make -j1 V=s`（ccache 取自步骤 9 写入的 .config，命令行不带参数）
 13. `organize-firmware.sh` 按 `profiles.json` 把镜像归集到 `release/<设备>/`，输出设备清单、版本号与时间戳供 `release` job 做 matrix
-14. 把 `release/` 整体上传为单个 artifact，命名 `ImmortalWrt_<版本>_AN7581_<年-月-日-时-分>`；每台设备的镜像只存一份
-15. `release` job（`release` 开关打开、且源码分支为 `master` 时才跑）：从该 artifact 取本设备子目录，各打包一个 `immortalwrt-<设备>.tar.zst` 建一个 Release，
+14. 按设备各上传一个 artifact，命名 `ImmortalWrt_<版本>_<设备>_<年-月-日-时-分>`（一台设备一个包，不另存合并包）
+15. `release` job（`release` 开关打开、且源码分支为 `master` 时才跑）：下载本设备的 artifact，各打包一个 `immortalwrt-<设备>.tar.zst` 建一个 Release，
     并清理旧 workflow runs (保留 7 天 / 至少 3 条，整个 run 只清一次) 和旧 Release (本设备标签保留最近 3 个，连 tag 一起删)
 
 步骤 1–14 都是 `build` job，15 是 `release` job；`release` 按 `build` 输出的设备清单做 matrix，
-各自只处理一台设备，所以新增设备不用改工作流，只改配置与 `device_label` 映射。
+各自只处理一台设备。新增设备要改配置、`device_label` 映射，并在 build job 补一条上传步骤
+（`upload-artifact` 不能在单 job 里按运行时设备清单循环，artifact 清单只能静态登记）。
 
 `publish-feed-repos.yml`（自建源的唯一发布入口，只编 app 并发布、不产镜像）：
 
@@ -417,7 +418,7 @@ commit sha 写进 `add-feed-sources.sh` 的 pin 并提交 → 再跑这条工作
 
 - 改某台设备的软件包和内核模块，改它自己那份配置（`an7581.config`）；`configs/` 下的参考配置改了不影响云编译，工作流不读它
 - 同一平台的多台设备共用一份配置：只给某台设备加减包，改它的 `CONFIG_TARGET_DEVICE_PACKAGES_airoha_an7581_DEVICE_<设备>`，别动全局 `=y`（基础层每台设备都会拿到，详见上方"支持设备"）
-- 新增同平台设备：配置里打开 `CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_<设备>=y`，再到 `organize-firmware.sh` 的 `device_label` 补一行产物名映射；工作流不用改
+- 新增同平台设备：配置里打开 `CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_<设备>=y`，到 `organize-firmware.sh` 的 `device_label` 补一行产物名映射，再到 build job 末尾补一条 `Upload firmware <设备>` 步骤（artifact 清单静态登记，不能随设备清单自动增长）
 - 改默认 IP、DHCP 等参数改 `set-firmware-defaults.sh`，注意它对所有产出生效
 - 要修 feed 包源码里的上游缺陷（不是出厂值，是 LuCI 页面行为本身）改 `patch-feed-packages.sh`，两个工作流都会跑它
 - 换源码分支只改对应工作流 `env` 段的 `REPO_BRANCH`，本仓库的分支名不参与推导

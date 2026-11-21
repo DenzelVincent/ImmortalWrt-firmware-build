@@ -296,15 +296,22 @@ jobs:
         $GITHUB_WORKSPACE/$SCRIPT_ORGANIZE_FIRMWARE
 
     # ----------------------------------------------------------
-    # 步骤 15: 上传全部设备镜像为单个 artifact（每份镜像只存一次）
-    # 平台级命名；release job 按设备从里面的子目录取名打包
+    # 步骤 15: 按设备各上传一个 artifact（一台设备一个包，不另存合并包）
+    # upload-artifact 不能在单 job 里按运行时设备清单循环，新增设备须在此补一条上传步骤（步骤名里的设备名与 device_label 一致）
     # ----------------------------------------------------------
-    - name: Upload firmware
+    - name: Upload firmware XG-040G-MD
       uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success' && !cancelled()
+      if: steps.organize.outputs.status == 'success' && hashFiles('release/XG-040G-MD/*') != '' && !cancelled()
       with:
-        name: ImmortalWrt_${{ steps.version.outputs.fw_version }}_AN7581${{ steps.compile.outputs.file_date }}
-        path: release/
+        name: ImmortalWrt_${{ steps.version.outputs.fw_version }}_XG-040G-MD${{ steps.compile.outputs.file_date }}
+        path: release/XG-040G-MD
+
+    - name: Upload firmware HG5382A
+      uses: actions/upload-artifact@main
+      if: steps.organize.outputs.status == 'success' && hashFiles('release/HG5382A/*') != '' && !cancelled()
+      with:
+        name: ImmortalWrt_${{ steps.version.outputs.fw_version }}_HG5382A${{ steps.compile.outputs.file_date }}
+        path: release/HG5382A
 
   # ------------------------------------------------------------
   # Release 发布 job：按设备各建一个 Release，并清理旧 runs / Releases
@@ -330,23 +337,23 @@ jobs:
     steps:
 
       # ----------------------------------------------------------
-      # 步骤 1: 下载本次 run 的 artifact，取出本设备子目录
+      # 步骤 1: 下载本设备的 artifact（artifact 名带设备名，一台设备一个包）
       # ----------------------------------------------------------
       - name: Download firmware artifact
         uses: actions/download-artifact@v4
         with:
-          name: ImmortalWrt_${{ needs.build.outputs.fw_version }}_AN7581${{ needs.build.outputs.file_date }}
+          name: ImmortalWrt_${{ needs.build.outputs.fw_version }}_${{ matrix.device }}${{ needs.build.outputs.file_date }}
           path: firmware
 
       # ----------------------------------------------------------
-      # 步骤 2: 把本设备散文件目录打包成 immortalwrt-<设备>.tar.zst
+      # 步骤 2: 把本设备散文件打包成 immortalwrt-<设备>.tar.zst
       # ----------------------------------------------------------
       - name: Package firmware
         env:
           DEVICE: ${{ matrix.device }}
         run: |
           mkdir -p release
-          tar --zstd -cf "release/immortalwrt-${DEVICE}.tar.zst" -C "firmware/${DEVICE}" .
+          tar --zstd -cf "release/immortalwrt-${DEVICE}.tar.zst" -C firmware .
           ls -l release/
 
       # ----------------------------------------------------------
