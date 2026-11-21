@@ -1,8 +1,7 @@
 # ImmortalWrt 固件云编译
 
 > MT7981 源码：[Hanwckf's ImmortalWrt](https://github.com/hanwckf/immortalwrt-mt798x)（AX3000T）、
-> [个人 ImmortalWrt Fork](https://github.com/DenzelVincent/immortalwrt/tree/24.10.6)（RAX3000M，`24.10.6`）、
-> [U-Boot](https://github.com/hanwckf/bl-mt798x)  
+> [个人 ImmortalWrt Fork](https://github.com/DenzelVincent/immortalwrt/tree/24.10.6)（RAX3000M，`24.10.6`）  
 > AN7581 源码：[ImmortalWrt](https://github.com/DenzelVincent/ponwrt)
 
 本项目利用 GitHub Actions 编译 ImmortalWrt 固件，支持 MT7981 和 AN758x 两大平台。
@@ -13,7 +12,7 @@
 |---|---|---|
 | `master` | 总览分支，存放所有工作流模板（不存放设备配置） | — |
 | `AN7581` | AN758x 平台编译目标（AN7581 XGS-PON） | `an7581.config` |
-| `MT7981` | MT7981 平台两台设备的固件 + U-Boot | `ax3000t.config`、`rax3000m.config` |
+| `MT7981` | MT7981 平台两台设备的固件 | `ax3000t.config`、`rax3000m.config` |
 
 > 新增编译目标时配置各留一份、不合并（各工作流只读自己那份配置，cache key 的 `hashFiles` 参数是字面量，
 > 并一会让改一台设备连带失效另一台的缓存）。要编哪台设备，在 Actions 页面选对应工作流。
@@ -24,7 +23,6 @@
 |---|---|---|---|
 | `build-ax3000t-immortalwrt.yml` | MT7981 / master | 编译小米 AX3000T 固件（源码 hanwckf `openwrt-21.02`；standard / stock / AN8855 变体按配置勾选） | 手动触发 (`workflow_dispatch`) |
 | `build-rax3000m-immortalwrt.yml` | MT7981 / master | 编译 CMCC RAX3000M 固件（源码个人 fork `24.10.6`，`mediatek/filogic` 子目标；同一 profile 也产出 eMMC 引导件，收集时排除，Release 只放 SPI-NAND 四件） | 手动触发 (`workflow_dispatch`) |
-| `build-mt7981-u-boot.yml` | MT7981 / master | 并行编译 MT7981 平台所有板型变体的 U-Boot 引导加载器 | 手动触发 (`workflow_dispatch`) |
 | `build-an7581-immortalwrt.yml` | AN7581 / master | 编译 AN7581 平台光猫固件 (XGS-PON)，源码分支由 `repo_branch` 输入决定（`master` 基线 / `bugfix` 修复验证，默认 `master`）；只产镜像，不发布自建 feed 源。`release` 开关只在选 `master` 时生效 | 手动触发 (`workflow_dispatch`) |
 | `publish-feed-repos.yml` | AN7581 / master | 自建 feed 源的唯一发布入口：只编 AN7581 发布集里的 app 包并签名发布到 Pages，不产固件镜像；用于 app 打过新 tag、`add-feed-sources.sh` 的 pin 已跟上之后的单独发版 | 手动触发 (`workflow_dispatch`) |
 
@@ -137,15 +135,6 @@ AN7581 XGS-PON 编译目标的插件清单如下，NPU 固件包为 `airoha-en75
 |---|---|---|
 | 小米 AX3000T | `xiaomi_mi-router-ax3000t` | 标准版、stock 版、AN8855 版、AN8855-stock 版；配置标识符保持上游原名，收集步骤把产物名里的 `mi-router-` 段去掉，出 `xiaomi_ax3000t`（勾了 AN8855 变体再多一个 `xiaomi_ax3000t-an8855`），两变体分目录各自打包 |
 | CMCC RAX3000M | `cmcc_rax3000m` | 官方 24.10 仅此一个 profile，SPI-NAND 与 eMMC 两套 preloader/fip（含 `-emmc-gpt.bin`）同批产出，但本机型是 SPI-NAND，eMMC 三件套在收集步骤按 `*emmc*` 排除，Release 只放 sysupgrade/recovery 两个 itb 加 `-nand-preloader.bin`/`-nand-bl31-uboot.fip` |
-
-### MT7981 平台 - U-Boot
-
-| 板型 | `BOARD` 值 | SoC |
-|---|---|---|
-| 小米 AX3000T | `ax3000t` | MT7981 |
-| 小米 AX3000T (AN8855) | `ax3000t_an8855` | MT7981 |
-| CMCC RAX3000M (SPI-NAND) | `cmcc_rax3000m` | MT7981 |
-| CMCC RAX3000M (eMMC) | `cmcc_rax3000m-emmc` | MT7981 |
 
 ### AN7581 平台 - 固件 (ImmortalWrt)
 
