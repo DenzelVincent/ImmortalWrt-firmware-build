@@ -152,7 +152,7 @@ AN7581 XGS-PON 编译目标的插件清单如下，NPU 固件包为 `airoha-en75
 | AN7583 | Nokia XG-040G-MF | `nokia_xg-040g-mf`、`nokia_xg-040g-mf-ubi` | `bosa`、`ri` |
 
 > 上表是 PonWrt 平台支持的完整设备清单；`AN7581` 分支当前只提供 AN7581 XGS-PON 一个编译目标，
-> 一趟同时产出 Nokia XG-040G-MD 与 FiberHome HG5382A 两台设备的镜像，artifact 含全部设备（单份存储），Release 按设备各出一个。
+> 一趟同时产出 Nokia XG-040G-MD 与 FiberHome HG5382A 两台设备的镜像，artifact 按设备各出一个包，Release 也按设备各出一个。
 > HG5382A 无 USB 口：存储类 app 全局降 `=m` 移出基础层，由 Nokia 那个 profile 的包列表拉回。
 > 不含 AN7583 编译目标，`configs/an7583.config` 仅作参考。
 
