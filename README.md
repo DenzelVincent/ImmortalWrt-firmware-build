@@ -186,7 +186,7 @@ USB 内核模块与文件系统模块本来就是 `=m`，且 HG5382A 的 `DEVICE
 文件名写"做什么"，执行阶段写在各脚本的头注释里；各编译目标共用同一批脚本，改动对所有产出生效。
 
 `organize-firmware.sh` 里的 `device_label` 是产物命名的唯一登记处：profile slug → 设备名（大写去品牌），
-artifact 名、Release 标签、旧 Release 清理的 `delete_tag_pattern` 共用这套字面量。
+artifact 名使用平台级 `AN7581` 后缀（单份存储全部设备），Release 标签与旧 Release 清理的 `delete_tag_pattern` 共用设备名这套字面量。
 新增设备必须在此补一行，未登记即报错退出，不静默跳过。它按 `bin/targets/airoha/<subtarget>/profiles.json`
 的 `images[].name` 精确名单归集，不用前缀匹配——否则 `nokia_xg-040g-md-ubi` 会把 `-ubi-usb-sfp` 变体的镜像一起吞进来。
 
@@ -355,12 +355,12 @@ openssl ec -in private-key.pem -pubout -out public-key.pem
 10. 执行 `set-firmware-defaults.sh` 修改固件出厂默认参数
 11. 预下载软件包源码 (`make download`)
 12. 编译固件：全并发 → 同级并发重试 → 才降级 `make -j1 V=s`（ccache 取自步骤 9 写入的 .config，命令行不带参数）
-13. `organize-firmware.sh` 按 `profiles.json` 把镜像归集到 `release/<设备>/`，输出设备清单、版本号与时间戳供后两个 job 做 matrix
-14. `package` job：按设备各上传一个 artifact，命名 `ImmortalWrt_<版本>_<设备>_<年-月-日-时-分>`
-15. `release` job（`release` 开关打开、且源码分支为 `master` 时才跑）：按设备各打包一个 `immortalwrt-<设备>.tar.zst` 建一个 Release，
+13. `organize-firmware.sh` 按 `profiles.json` 把镜像归集到 `release/<设备>/`，输出设备清单、版本号与时间戳供 `release` job 做 matrix
+14. 把 `release/` 整体上传为单个 artifact，命名 `ImmortalWrt_<版本>_AN7581_<年-月-日-时-分>`；每台设备的镜像只存一份
+15. `release` job（`release` 开关打开、且源码分支为 `master` 时才跑）：从该 artifact 取本设备子目录，各打包一个 `immortalwrt-<设备>.tar.zst` 建一个 Release，
     并清理旧 workflow runs (保留 7 天 / 至少 3 条，整个 run 只清一次) 和旧 Release (本设备标签保留最近 3 个，连 tag 一起删)
 
-步骤 1–13 是 `build` job，14 是 `package` job，15 是 `release` job；后两个都按 `build` 输出的设备清单做 matrix，
+步骤 1–14 都是 `build` job，15 是 `release` job；`release` 按 `build` 输出的设备清单做 matrix，
 各自只处理一台设备，所以新增设备不用改工作流，只改配置与 `device_label` 映射。
 
 `publish-feed-repos.yml`（自建源的唯一发布入口，只编 app 并发布、不产镜像）：
@@ -391,7 +391,7 @@ openssl ec -in private-key.pem -pubout -out public-key.pem
   未传时（schedule / API 触发）回落 `master`。缓存 key、restore-keys 与清理前缀都带分支段，两条分支各自独立，
   勾 `clean_*` 只清本分支。发布工作流固定 `master`，不接受分支输入。
   注意 `bugfix` 不只带 PON 修复：它的源码树 `files/` 还多了 mt76 线程亲和性脚本，选它不是纯净的 A/B 对照。
-- `release` — 编译成功后按设备各创建一个 GitHub Release（只发该设备的固件镜像压缩包），默认关闭，关闭时只保留每设备 artifact。
+- `release` — 编译成功后按设备各创建一个 GitHub Release（只发该设备的固件镜像压缩包），默认关闭，关闭时只保留 run 的 artifact。
   **只在 `repo_branch=master` 时生效**：标签名不含分支，bugfix 发布会与正式版共用同一设备的 `keep_latest: 3` 名额
   并可能删掉正式版，故 bugfix 只出 artifact。Release 说明里附源码分支与提交 sha 供溯源。
 

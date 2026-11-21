@@ -1,6 +1,6 @@
 #!/bin/sh
 # 阶段: make 之后 (工作流步骤 "Organize firmware files")，cwd = 本仓库根目录
-# 用途: 把编译产物按设备归集到 release/<设备名>/，并输出设备清单供 package/release job 做 matrix
+# 用途: 把编译产物按设备归集到 release/<设备名>/，并输出设备清单供 release job 做 matrix
 # 事实来源: bin/targets/airoha/<subtarget>/profiles.json —— 只含本次实际启用的 profile，images[].name 是精确文件名
 # 依据: 用精确名单而非 image_prefix 前缀匹配，否则 nokia_xg-040g-md-ubi 会把 -ubi-usb-sfp 变体的镜像一起吞进来
 # 注意: device_label 是产物命名的唯一登记处，新增设备必须在此补一行，未登记即报错退出，不静默跳过
@@ -63,7 +63,7 @@ if [ -z "$labels" ]; then
   exit 1
 fi
 
-# 去重后转 JSON 数组，供 package/release job 的 strategy.matrix 使用
+# 去重后转 JSON 数组，供 release job 的 strategy.matrix 使用
 devices="$(printf '%s' "$labels" | sort -u | jq -R . | jq -sc .)"
 echo "devices=$devices" >> "$GITHUB_OUTPUT"
 echo "status=success" >> "$GITHUB_OUTPUT"
