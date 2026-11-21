@@ -1,7 +1,7 @@
 # ============================================================
 # ImmortalWrt 固件编译工作流 (CMCC RAX3000M)
 # 目标设备: CMCC RAX3000M (MT7981 / mediatek-filogic，SPI-NAND)
-# 源码来源: https://github.com/DenzelVincent/immortalwrt.git (24.10.6 分支)
+# 源码来源: https://github.com/immortalwrt/immortalwrt.git (v24.10.6 标签)
 # 触发方式: 手动触发 (workflow_dispatch)
 # ============================================================
 
@@ -30,10 +30,10 @@ on:
         default: false
 
 env:
-  # 源码仓库地址 (官方 v24.10.6 的个人 fork，便于个性化改造)
-  REPO_URL: https://github.com/DenzelVincent/immortalwrt.git
-  # 源码分支
-  REPO_BRANCH: 24.10.6
+  # 源码仓库地址（官方稳定版）
+  REPO_URL: https://github.com/immortalwrt/immortalwrt.git
+  # 源码标签（官方 v24.10.6，固定版本不跟分支）
+  REPO_BRANCH: v24.10.6
   # 设备配置文件（复制成 openwrt/.config）与缓存 key 前缀；改名须同步两条 cache key 里的文件名
   CONFIG_FILE: rax3000m.config
   CONFIG_NAME: rax3000m
@@ -317,7 +317,7 @@ jobs:
           ts="${BASH_REMATCH[3]}"
           echo "release_tag=ImmortalWrt_${fw}_RAX3000M_${ts}" >> $GITHUB_OUTPUT
           touch release.txt
-          echo "ImmortalWrt ${fw} for CMCC RAX3000M (MT7981 / mediatek-filogic，源码 DenzelVincent/immortalwrt 24.10.6)" >> release.txt
+          echo "ImmortalWrt ${fw} for CMCC RAX3000M (MT7981 / mediatek-filogic，源码 immortalwrt/immortalwrt v24.10.6)" >> release.txt
           echo "" >> release.txt
           echo "本机型是 SPI-NAND，Release 只放 4 件（同 profile 的 eMMC 三件套已在收集步骤排除）：" >> release.txt
           echo "- cmcc_rax3000m-squashfs-sysupgrade.itb（sysupgrade，UBI 根文件系统）" >> release.txt

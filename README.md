@@ -1,7 +1,7 @@
 # ImmortalWrt MT7981 路由器固件编译
 
 > 源码：[Hanwckf's ImmortalWrt](https://github.com/hanwckf/immortalwrt-mt798x)（AX3000T）｜
-> [个人 ImmortalWrt Fork](https://github.com/DenzelVincent/immortalwrt/tree/24.10.6)（RAX3000M，`24.10.6`）
+> [官方 ImmortalWrt](https://github.com/immortalwrt/immortalwrt/tree/v24.10.6)（RAX3000M，`v24.10.6`）
 
 本项目利用 GitHub Actions 编译 ImmortalWrt 固件。
 一台设备一条工作流、一份配置文件，互不干扰（同分支上两条工作流共用 Actions 缓存命名空间，
@@ -15,11 +15,10 @@
 | 工作流 | 设备配置 | 说明 | 触发方式 |
 |---|---|---|---|
 | `build-ax3000t-immortalwrt.yml` | `ax3000t.config` | 编译小米 AX3000T 固件（配置里勾选哪些变体就出哪些） | 手动触发 (`workflow_dispatch`) |
-| `build-rax3000m-immortalwrt.yml` | `rax3000m.config` | 编译 CMCC RAX3000M 固件（个人 fork `24.10.6`，`mediatek/filogic` 子目标） | 手动触发 (`workflow_dispatch`) |
+| `build-rax3000m-immortalwrt.yml` | `rax3000m.config` | 编译 CMCC RAX3000M 固件（官方 `v24.10.6`，`mediatek/filogic` 子目标） | 手动触发 (`workflow_dispatch`) |
 
 两条固件工作流的源码仓库不同：AX3000T 用 `hanwckf/immortalwrt-mt798x` 的 `openwrt-21.02`，
-RAX3000M 用 `DenzelVincent/immortalwrt` 的 `24.10.6` 分支（官方 `v24.10.6` 的个人 fork，
-便于后续个性化改造）。源码仓库的 `feeds.conf.default` 只保留默认 feed（按提交锁定），
+RAX3000M 用 `immortalwrt/immortalwrt` 的 `v24.10.6` 标签（官方 24.10 稳定版）。源码仓库的 `feeds.conf.default` 只保留默认 feed（按提交锁定），
 `lucky`、`mosdns`（仅 RAX3000M）这类编译期增量统一由本仓库的 `add-feed-sources.sh` 追加，不写进源码仓库。
 主线把 MT7981 归到 `mediatek/filogic` 子目标，
 无线改用内核态 mt76，`kmod-mt_wifi`/`mtwifi-cfg`/`luci-app-turboacc-mtk`/`luci-app-eqos-mtk`/`mii_mgr`
@@ -79,7 +78,7 @@ OpenClash 的 `luci-compat`/`dnsmasq-full`/`bash`/`curl`/`ruby`/`kmod-nft-tproxy
 
 | 文件 | 用途 |
 |---|---|
-| `ax3000t.config`、`rax3000m.config` | OpenWrt menuconfig 配置 — 一份对应一条固件工作流，各自只启用本机型设备（`ax3000t.config` 里同一机型的其它变体行注释保留，勾选哪些就出哪些镜像）。`ax3000t.config` 面向 hanwckf 21.02 的 `mediatek/mt7981`，`rax3000m.config` 面向个人 fork `24.10.6` 的 `mediatek/filogic`，两份配置的 target 符号与软件包段互不通用。工作流把选中的那份复制成 `openwrt/.config`，并无条件追加 `CONFIG_CCACHE=y`（`dl/` 与 `openwrt/.ccache` 两层缓存默认启用，触发表只留清理开关）。`Cache ...` 的 key 前缀取自工作流 env 的 `CONFIG_NAME`（与 `CONFIG_FILE` 成对定义），改设备要同步 `CONFIG_FILE`、`CONFIG_NAME`、key 里的哈希文件名、`EXPECT_TARGET`/`EXPECT_DEVICE` 四处。`Load custom config` 步骤末尾有两道断言：defconfig 结果里必须仍有 `EXPECT_TARGET`/`EXPECT_DEVICE`（拦配置文件与源码树不匹配导致的静默跑错 target），以及 `CONFIG_CCACHE=y` 仍在。`rax3000m.config` 另显式关闭 7 个 `trusted-firmware-a-mt79xx-ram-*`：上游 `include/trusted-firmware-a.mk` 对它们写了 `DEFAULT:=TARGET_mediatek_filogic`，勾了 filogic 就默认全选，各自只往 BIN_DIR 丢一个 UART 救砖 `mt79xx-ram-*-bl2.bin`，关掉可省 7 次 arm-trusted-firmware 交叉编译（真正刷机用的 `*-spim-nand-ddr4` 等隐藏变体不能关，镜像构建要用它们的 staging 产物）。勾选 `clean_dl_cache` / `clean_ccache` 时，对应的 `Clear ... cache` 步骤排在同层 `Cache ...` 步骤之前，先从 Actions 缓存存储删掉本设备前缀的条目，本趟恢复落空、全量下载/重编并收尾重存，一趟冷编译即恢复热度；删除后还有残留断言，没删净直接失败 |
+| `ax3000t.config`、`rax3000m.config` | OpenWrt menuconfig 配置 — 一份对应一条固件工作流，各自只启用本机型设备（`ax3000t.config` 里同一机型的其它变体行注释保留，勾选哪些就出哪些镜像）。`ax3000t.config` 面向 hanwckf 21.02 的 `mediatek/mt7981`，`rax3000m.config` 面向官方 `v24.10.6` 的 `mediatek/filogic`，两份配置的 target 符号与软件包段互不通用。工作流把选中的那份复制成 `openwrt/.config`，并无条件追加 `CONFIG_CCACHE=y`（`dl/` 与 `openwrt/.ccache` 两层缓存默认启用，触发表只留清理开关）。`Cache ...` 的 key 前缀取自工作流 env 的 `CONFIG_NAME`（与 `CONFIG_FILE` 成对定义），改设备要同步 `CONFIG_FILE`、`CONFIG_NAME`、key 里的哈希文件名、`EXPECT_TARGET`/`EXPECT_DEVICE` 四处。`Load custom config` 步骤末尾有两道断言：defconfig 结果里必须仍有 `EXPECT_TARGET`/`EXPECT_DEVICE`（拦配置文件与源码树不匹配导致的静默跑错 target），以及 `CONFIG_CCACHE=y` 仍在。`rax3000m.config` 另显式关闭 7 个 `trusted-firmware-a-mt79xx-ram-*`：上游 `include/trusted-firmware-a.mk` 对它们写了 `DEFAULT:=TARGET_mediatek_filogic`，勾了 filogic 就默认全选，各自只往 BIN_DIR 丢一个 UART 救砖 `mt79xx-ram-*-bl2.bin`，关掉可省 7 次 arm-trusted-firmware 交叉编译（真正刷机用的 `*-spim-nand-ddr4` 等隐藏变体不能关，镜像构建要用它们的 staging 产物）。勾选 `clean_dl_cache` / `clean_ccache` 时，对应的 `Clear ... cache` 步骤排在同层 `Cache ...` 步骤之前，先从 Actions 缓存存储删掉本设备前缀的条目，本趟恢复落空、全量下载/重编并收尾重存，一趟冷编译即恢复热度；删除后还有残留断言，没删净直接失败 |
 | `scripts/firmware/add-feed-sources.sh` | feeds 更新**前**执行的钩子脚本 — 增删第三方软件源（改 `feeds.conf.default`）。feed 名只能用字母、数字、下划线，带连字符会让 `feeds update` 报语法错误（该限制只约束 feed 名，`^<ref>` 段里的连字符不受影响）。当前追加 `lucky` feed（`gdy666/luci-app-lucky`，pin `b07f65c28bb5…`），并在 `CONFIG_FILE=rax3000m.config` 时把 `mosdns` feed（`sbwml/luci-app-mosdns`，pin `4bafe28…`）插到 `src-git packages` 之前；`grep` 判重，重复执行不会写第二条。源码仓库只保留默认 feed，第三方 feed 一律在本脚本追加。源码引用统一锁完整 commit sha，不锁 tag、不跟分支、也不在 CI 里动态取最新：`scripts/feeds` 的 `init_commit` 末步按**名字** `checkout`，浅克隆下非 tip 的 tag 解析不到，会 `pathspec ... did not match` 让整个步骤退出非 0，sha 则按对象取、按对象检出，与 tip 位置无关。脚本末尾断言每条 ref 都是 40 位十六进制；换 pin 后本地要先删对应的 `feeds/<feed>/`（带 `^ref` 的 feed 在 `scripts/feeds` 里不会再 update） |
 | `scripts/firmware/set-firmware-defaults.sh` | `make defconfig` **后**、编译**前**执行的钩子脚本 — 用 `sed` 改源码树里会被装进 rootfs 的文件，即固件的出厂默认值（恢复出厂和 `sysupgrade -n` 后仍是这里的值）。当前把默认 LAN IP 改为 `10.0.0.1`；DHCP 地址池出厂值为 `start=100` / `limit=150`（即 `.100`–`.249`），一般不必显式配置 |
 | `feeds.conf.default` | （可选）覆盖默认 feeds 软件源 |
@@ -88,7 +87,7 @@ OpenClash 的 `luci-compat`/`dnsmasq-full`/`bash`/`curl`/`ruby`/`kmod-nft-tproxy
 ## 编译指南参考
 
 - AX3000T（hanwckf 分支）：[hanwckf ImmortalWrt MT798x 编译说明](https://cmi.hanwckf.top/p/immortalwrt-mt798x/)
-- RAX3000M（个人 fork）：源码为 [DenzelVincent/immortalwrt](https://github.com/DenzelVincent/immortalwrt/tree/24.10.6) 的 `24.10.6` 分支，
+- RAX3000M（官方源码）：源码为 [immortalwrt/immortalwrt](https://github.com/immortalwrt/immortalwrt/tree/v24.10.6) 的 `v24.10.6` 标签，
   设备定义在 `target/linux/mediatek/image/filogic.mk`（`Device/cmcc_rax3000m_common` 起）；
   U-Boot 与 preloader/fip 由源码 `package/boot/uboot-mediatek` 一起构建，产物已在固件目录里；固件工作流的整理步骤按 `*cmcc_rax3000m-*` 收本 profile 的文件并排除 `*emmc*`，最终 4 件，数量不符直接失败
 
