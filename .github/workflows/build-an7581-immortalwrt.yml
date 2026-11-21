@@ -54,7 +54,7 @@ env:
   SCRIPT_PATCH_FEED_PACKAGES: scripts/firmware/patch-feed-packages.sh
   # 3) make defconfig 之后 —— 改固件出厂默认值 (默认 IP、DHCP 等)
   SCRIPT_SET_FIRMWARE_DEFAULTS: scripts/firmware/set-firmware-defaults.sh
-  # 4) make 之后 —— 按设备归集镜像，输出设备清单供 package/release job 做 matrix
+  # 4) make 之后 —— 按设备归集镜像，输出设备清单供 release job 做 matrix
   SCRIPT_ORGANIZE_FIRMWARE: scripts/firmware/organize-firmware.sh
   # 编译环境时区
   TZ: Asia/Shanghai
@@ -66,7 +66,7 @@ jobs:
     name: build-firmware
     runs-on: ubuntu-24.04
 
-    # 设备清单与版本号跨 job 传递：package/release 按 devices 做 matrix，各自只处理一台
+    # 设备清单与版本号跨 job 传递：release 按 devices 做 matrix，各自只处理一台
     outputs:
       devices: ${{ steps.organize.outputs.devices }}
       fw_version: ${{ steps.version.outputs.fw_version }}
@@ -296,52 +296,15 @@ jobs:
         $GITHUB_WORKSPACE/$SCRIPT_ORGANIZE_FIRMWARE
 
     # ----------------------------------------------------------
-    # 步骤 15: 上传归集结果作为 job 间中转，每设备 artifact 由 package job 产出
+    # 步骤 15: 上传全部设备镜像为单个 artifact（每份镜像只存一次）
+    # 平台级命名；release job 按设备从里面的子目录取名打包
     # ----------------------------------------------------------
-    - name: Upload raw firmware
+    - name: Upload firmware
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: firmware-raw
+        name: ImmortalWrt_${{ steps.version.outputs.fw_version }}_AN7581${{ steps.compile.outputs.file_date }}
         path: release/
-        retention-days: 1
-
-  # ------------------------------------------------------------
-  # 打包 job：按设备各上传一个 artifact，命名 ImmortalWrt_<版本>_<设备>_<日期-时分>
-  # 设备清单来自 build 的 organize 步骤，新增设备只需改配置与 device_label 映射
-  # ------------------------------------------------------------
-  package:
-    name: package-${{ matrix.device }}
-    runs-on: ubuntu-latest
-    needs: build
-    if: needs.build.result == 'success' && !cancelled()
-
-    permissions:
-      actions: write    # 允许上传每设备 artifact
-
-    strategy:
-      fail-fast: false
-      matrix:
-        device: ${{ fromJson(needs.build.outputs.devices) }}
-
-    steps:
-      # ----------------------------------------------------------
-      # 步骤 1: 取回 build 归集好的镜像目录
-      # ----------------------------------------------------------
-      - name: Download raw firmware
-        uses: actions/download-artifact@v4
-        with:
-          name: firmware-raw
-          path: release
-
-      # ----------------------------------------------------------
-      # 步骤 2: 只上传本设备子目录（tar.zst 打包由 release job 执行）
-      # ----------------------------------------------------------
-      - name: Upload firmware directory
-        uses: actions/upload-artifact@main
-        with:
-          name: ImmortalWrt_${{ needs.build.outputs.fw_version }}_${{ matrix.device }}${{ needs.build.outputs.file_date }}
-          path: release/${{ matrix.device }}
 
   # ------------------------------------------------------------
   # Release 发布 job：按设备各建一个 Release，并清理旧 runs / Releases
@@ -352,7 +315,7 @@ jobs:
   release:
     name: release-${{ matrix.device }}
     runs-on: ubuntu-latest
-    needs: [build, package]
+    needs: build
     if: needs.build.result == 'success' && !cancelled() && inputs.release && needs.build.outputs.src_branch == 'master'
 
     permissions:
@@ -367,12 +330,12 @@ jobs:
     steps:
 
       # ----------------------------------------------------------
-      # 步骤 1: 下载本设备的 artifact（命名约定见 package job 步骤 2）
+      # 步骤 1: 下载本次 run 的 artifact，取出本设备子目录
       # ----------------------------------------------------------
       - name: Download firmware artifact
         uses: actions/download-artifact@v4
         with:
-          name: ImmortalWrt_${{ needs.build.outputs.fw_version }}_${{ matrix.device }}${{ needs.build.outputs.file_date }}
+          name: ImmortalWrt_${{ needs.build.outputs.fw_version }}_AN7581${{ needs.build.outputs.file_date }}
           path: firmware
 
       # ----------------------------------------------------------
@@ -383,7 +346,7 @@ jobs:
           DEVICE: ${{ matrix.device }}
         run: |
           mkdir -p release
-          tar --zstd -cf "release/immortalwrt-${DEVICE}.tar.zst" -C firmware .
+          tar --zstd -cf "release/immortalwrt-${DEVICE}.tar.zst" -C "firmware/${DEVICE}" .
           ls -l release/
 
       # ----------------------------------------------------------
