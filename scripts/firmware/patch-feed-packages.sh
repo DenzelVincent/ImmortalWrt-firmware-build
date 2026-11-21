@@ -159,4 +159,28 @@ grep -qF "push(adlist, '/var/mosdns/disable-ads.txt')" "$uc_uc" || {
   exit 1
 }
 
-echo "feed 补丁完成: form.js 已限定删除条件, v2ray-geosite 默认值已移除, 聚合清单已入下拉框, 端口行已改 flex 均分, 空广告源已有兜底"
+# ---------- 5) luci.upnp: 修 fw4 计数器插在 dport/dnat 之间导致状态页永远空 ----------
+# fw4 打印的规则形如 "... th dport N counter packets X bytes Y dnat ip to A:P",
+# 原正则要求 dport 后紧跟 dnat, match 恒失败 -> ubus call luci.upnp get_status 返回空列表,
+# 页面不显示映射、也没有删除按钮; 加 .* 后捕获组编号不变 (协议/外部端口/内网地址/内网端口)
+upnp_uc=package/feeds/luci/luci-app-upnp/root/usr/share/rpcd/ucode/luci.upnp
+[ -f "$upnp_uc" ] || {
+  echo "::error::找不到 $upnp_uc（luci feed 的包目录结构变了？）"
+  exit 1
+}
+
+# 源码里是 ucode 正则的字面量 "[0-9]"，sed 没转义的 [0-9] 是字符集，永远匹配不到字面 '['，
+# 所以 grep -F 用未转义串判存在，sed 用 \[0-9\] 的 BRE 写法；替换串里的 [ 是字面量，无需转义
+upnp_old='th dport ([0-9]+) dnat ip to ([0-9.]+):([0-9]+)'
+upnp_old_re='th dport (\[0-9\]+) dnat ip to (\[0-9.\]+):(\[0-9\]+)'
+upnp_new='th dport ([0-9]+).*dnat ip to ([0-9.]+):([0-9]+)'
+if grep -qF "$upnp_old" "$upnp_uc"; then
+  sed -i "s@$upnp_old_re@$upnp_new@" "$upnp_uc"
+fi
+
+grep -qF "$upnp_new" "$upnp_uc" || {
+  echo "::error::luci.upnp 的 dport/dnat 正则未修上（上游已改写法？），UPnP 状态页会继续为空"
+  exit 1
+}
+
+echo "feed 补丁完成: form.js 已限定删除条件, v2ray-geosite 默认值已移除, 聚合清单已入下拉框, 端口行已改 flex 均分, 空广告源已有兜底, UPnP 状态页正则已兼容 fw4 计数器"
