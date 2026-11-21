@@ -1,10 +1,9 @@
 # ImmortalWrt MT7981 路由器固件编译
 
 > 源码：[Hanwckf's ImmortalWrt](https://github.com/hanwckf/immortalwrt-mt798x)（AX3000T）｜
-> [个人 ImmortalWrt Fork](https://github.com/DenzelVincent/immortalwrt/tree/24.10.6)（RAX3000M，`24.10.6`）｜
-> [U-Boot](https://github.com/hanwckf/bl-mt798x)
+> [个人 ImmortalWrt Fork](https://github.com/DenzelVincent/immortalwrt/tree/24.10.6)（RAX3000M，`24.10.6`）
 
-本项目利用 GitHub Actions 编译 ImmortalWrt 固件及相应的 U-Boot。
+本项目利用 GitHub Actions 编译 ImmortalWrt 固件。
 一台设备一条工作流、一份配置文件，互不干扰（同分支上两条工作流共用 Actions 缓存命名空间，
 靠缓存 key 的 `CONFIG_NAME` 前缀分隔）：
 
@@ -17,7 +16,6 @@
 |---|---|---|---|
 | `build-ax3000t-immortalwrt.yml` | `ax3000t.config` | 编译小米 AX3000T 固件（配置里勾选哪些变体就出哪些） | 手动触发 (`workflow_dispatch`) |
 | `build-rax3000m-immortalwrt.yml` | `rax3000m.config` | 编译 CMCC RAX3000M 固件（个人 fork `24.10.6`，`mediatek/filogic` 子目标） | 手动触发 (`workflow_dispatch`) |
-| `build-mt7981-u-boot.yml` | — | 并行编译所有板型变体的 U-Boot 引导加载器 | 手动触发 (`workflow_dispatch`) |
 
 两条固件工作流的源码仓库不同：AX3000T 用 `hanwckf/immortalwrt-mt798x` 的 `openwrt-21.02`，
 RAX3000M 用 `DenzelVincent/immortalwrt` 的 `24.10.6` 分支（官方 `v24.10.6` 的个人 fork，
@@ -72,15 +70,6 @@ OpenClash 的 `luci-compat`/`dnsmasq-full`/`bash`/`curl`/`ruby`/`kmod-nft-tproxy
 |---|---|---|---|
 | 小米 AX3000T | `xiaomi_mi-router-ax3000t` | 标准版、`-stock`、`-an8855`、`-an8855-stock`；配置标识符保持上游原名，收集步骤把产物名里的 `mi-router-` 段去掉，出 `xiaomi_ax3000t`（勾了 AN8855 变体再多一个 `xiaomi_ax3000t-an8855`），两变体分目录各自打包 | `build-ax3000t-immortalwrt.yml` |
 | CMCC RAX3000M | `cmcc_rax3000m` | 官方 24.10 只有这一个 profile，`-emmc-preloader.bin`/`-emmc-bl31-uboot.fip`/`-emmc-gpt.bin` 虽与 SPI-NAND 引导件同批产出，但本机型用不到，收集步骤按 `*emmc*` 排除，Release 只放 sysupgrade/recovery 两个 itb 加 `-nand-preloader.bin`/`-nand-bl31-uboot.fip` | `build-rax3000m-immortalwrt.yml` |
-
-### U-Boot
-
-| 板型 | `BOARD` 值 | SoC |
-|---|---|---|
-| 小米 AX3000T | `ax3000t` | MT7981 |
-| 小米 AX3000T (AN8855) | `ax3000t_an8855` | MT7981 |
-| CMCC RAX3000M (SPI-NAND) | `cmcc_rax3000m` | MT7981 |
-| CMCC RAX3000M (eMMC) | `cmcc_rax3000m-emmc` | MT7981 |
 
 ## 自定义编译
 
